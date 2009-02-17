@@ -61,7 +61,7 @@ static char sccsid[] = "@(#)mkmakefile.c	5.21 (Berkeley) 6/18/88";
 #include <stdio.h>
 #include <unistd.h>	/* for unlink */
 #include <ctype.h>
-#include "y.tab.h"
+#include "parser.h"
 #include "config.h"
 
 void	read_files(void);
@@ -178,6 +178,7 @@ static	struct users {
 	{  8, 2, 32 },			/* MACHINE_SPARC */
 	{  8, 2, 32 },			/* MACHINE_PPC */
 	{  8, 2, 32 },			/* MACHINE_ARM */
+	{  8, 2, 32 },			/* MACHINE_X86_64 */
 };
 #define NUSERS	(sizeof (users) / sizeof (users[0]))
 
@@ -1033,6 +1034,7 @@ do_rules(FILE *f)
 				case MACHINE_SPARC:
 				case MACHINE_PPC:
 				case MACHINE_ARM:
+				case MACHINE_X86_64:
 					extras = "_P";
 					goto common;
 				default:

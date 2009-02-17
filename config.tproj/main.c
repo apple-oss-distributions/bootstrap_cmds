@@ -60,7 +60,7 @@ static char sccsid[] = "@(#)main.c	5.9 (Berkeley) 6/18/88";
 
 #include <stdio.h>
 #include <ctype.h>
-#include "y.tab.h"
+#include "parser.h"
 #include "config.h"
 
 /*
@@ -200,6 +200,10 @@ main(int argc, char *argv[])
 
 	case MACHINE_ARM:
 		arm_ioconf();
+		break;
+
+	case MACHINE_X86_64:
+		x86_64_ioconf();
 		break;
 
 	default:
