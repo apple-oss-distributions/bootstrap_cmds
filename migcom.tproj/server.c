@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 1999-2009 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -134,6 +134,7 @@ WriteMyIncludes(FILE *file, statement_t *stats)
     fprintf(file, "#include <mach/mig_log.h>\n");
     fprintf(file, "#endif /* MIG_DEBUG */\n");
   }
+
   fprintf(file, "\n");
 }
 
@@ -719,7 +720,7 @@ WriteCheckHead(FILE *file, routine_t *rt)
     if (rt->rtNumRequestVar > 0) {
       fprintf(file, "\t    (msgh_size < ");
       rtMinRequestSize(file, rt, "__Request");
-      fprintf(file, ") ||  (msgh_size > (mach_msg_size_t)sizeof(__Request))\n");
+      fprintf(file, ") ||  (msgh_size > (mach_msg_size_t)sizeof(__Request))");
     }
     else
       fprintf(file, "\t    (In0P->Head.msgh_size != (mach_msg_size_t)sizeof(__Request))");
@@ -1813,8 +1814,10 @@ WriteTCheckKPD_ool(FILE *file, register argument_t *arg)
     /* if VarArray we may use no-op; if itElement->itVarArray size might change */
     fprintf(file, " ||\n\t%s    %ssize != %d", tab, string, (howmany * howbig + 7)/8);
   }
+  
   fprintf(file, ")\n");
-  fprintf(file, "\t\t" "%sreturn MIG_TYPE_ERROR;\n", tab);
+  fprintf(file, "\t\t%s" "return MIG_TYPE_ERROR;\n", tab);
+  
   if (IS_MULTIPLE_KPD(it))
     fprintf(file, "\t    }\n\t}\n");
 }
@@ -2179,6 +2182,82 @@ InitKPD_Disciplines(argument_t *args)
       }   /* end of switch */
 }
 
+static void WriteStringTerminatorCheck(FILE *file, routine_t *rt)
+{
+  // 07/10/08 - gab: <rdar://problems/4636934>
+  // generate code to verify that the length of a C string is not greater than the size of the
+  // buffer in which it is stored.
+  argument_t  *argPtr;
+  int msg_limit_calculated = FALSE;
+  int found_string_argument = FALSE;
+  int variable_length_args_present = (rt->rtMaxRequestPos > 0);
+
+  // scan through arguments to see if there are any strings
+  for (argPtr = rt->rtArgs; argPtr != NULL; argPtr = argPtr->argNext) {
+    if ((argPtr->argKind & akbRequest) && argPtr->argType->itString) {
+      found_string_argument = TRUE;
+      break;
+    }
+  }
+
+  if (found_string_argument) {
+    // create a new scope, for local variables
+    fputs("#if __MigTypeCheck\n" "\t" "{" "\n", file);
+
+    for (argPtr = rt->rtArgs; argPtr != NULL; argPtr = argPtr->argNext) {
+      if ((argPtr->argKind & akbRequest) && argPtr->argType->itString) {
+        //fprintf(stderr, "### found itString: variable name = %s, max length = %d\n", argPtr->argName, argPtr->argType->itNumber);
+
+        if (!msg_limit_calculated) {
+          msg_limit_calculated = TRUE; // only need to do this once
+          fputs("\t\t" "char * msg_limit = ((char *) In0P) + In0P->Head.msgh_size;\n", file);
+          if (IsKernelServer) {
+            fputs("#if __MigKernelSpecificCode\n", file);
+            fputs("\t\t" "size_t strnlen_limit;" "\n", file);
+            fputs("#else\n", file);
+          }
+          fputs("\t\t" "size_t memchr_limit;" "\n", file);
+          if (IsKernelServer) {
+            fputs("#endif /* __MigKernelSpecificCode */" "\n", file);
+          }
+          fputc('\n', file);
+        }
+
+        // I would really prefer to use strnlen() here, to ensure that the byte scanning logic does not extend beyond
+        // the end of the buffer, but it's not necessarily guaranteed to be available. Instead, I'll use memchr(),
+        // and let it look for the terminating null byte.
+        // (later...)
+        // It turns out that the kernel does not have memchr() available, but strnlen() IS available, so we'll just
+        // have to emit some conditional code to use the appropriate runtime environment scanning function.
+        //
+        if (IsKernelServer) {
+          fputs("#if __MigKernelSpecificCode\n", file);
+          fputs("\t\t" "strnlen_limit = min((msg_limit - ", file);
+          // If there are variable-length arguments within the message, the proper (adjusted)
+          // pointers must be used to access those strings
+          fprintf(file, "In%dP->%s),  %d);" "\n", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName, argPtr->argType->itNumber);
+          fputs("\t\t" "if (", file);
+          fprintf(file, "( strnlen(In%dP->%s, strnlen_limit) >= %d + 1 )", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName, argPtr->argType->itNumber);
+          fputs(")" "\n" "\t\t\t" "return MIG_BAD_ARGUMENTS; // string length exceeds buffer length!" "\n", file);
+          fputs("#else\n", file);
+        }
+        // If there are variable-length arguments within the message, the proper (adjusted)
+        // pointers must be used to access those strings
+        fprintf(file, "\t\t" "memchr_limit = min((msg_limit - In%dP->%s),  %d);" "\n", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName, argPtr->argType->itNumber);
+        fputs("\t\t" "if (", file);
+        fprintf(file, "( memchr(In%dP->%s, '\\0', memchr_limit) == NULL )", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName);
+        fputs(")" "\n" "\t\t\t" "return MIG_BAD_ARGUMENTS; // string length exceeds buffer length!" "\n", file);
+        if (IsKernelServer) {
+          fputs("#endif /* __MigKernelSpecificCode */" "\n", file);
+        }
+      }
+    }
+    fputs("\t" "}" "\n" "#endif" "\t" "/* __MigTypeCheck */" "\n\n", file); // terminate new scope
+  }
+
+  return;
+}
+
 
 void
 WriteCheckRequest(FILE *file, routine_t *rt)
@@ -2239,6 +2318,9 @@ WriteCheckRequest(FILE *file, routine_t *rt)
       }
     }
   }
+
+  // 07/10/08 - gab: <rdar://problem/4636934>
+  WriteStringTerminatorCheck(file, rt);
 
   if (akCheck(rt->rtNdrCode->argKind, akbRequest)) {
     fprintf(file, "#if\t");

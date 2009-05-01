@@ -205,16 +205,17 @@ WriteOneMachErrorDefine(FILE *file, char *name, boolean_t timeout)
   fprintf(file, "#ifndef\t%s\n", name);
   fprintf(file, "#define\t%s(_R_) { \\\n", name);
   fprintf(file, "\tswitch (_R_) { \\\n");
-  fprintf(file, "\tcase MACH_SEND_INVALID_REPLY: \\\n");
-  fprintf(file, "\tcase MACH_RCV_INVALID_NAME: \\\n");
-  fprintf(file, "\tcase MACH_RCV_PORT_DIED: \\\n");
-  fprintf(file, "\tcase MACH_RCV_PORT_CHANGED: \\\n");
-  if (timeout)
-    fprintf(file, "\tcase MACH_RCV_TIMED_OUT: \\\n");
-  fprintf(file, "\t\tmig_dealloc_reply_port(InP->Head.msgh_reply_port); \\\n");
-  fprintf(file, "\t\tbreak; \\\n");
-  fprintf(file, "\tdefault: \\\n");
+  fprintf(file, "\tcase MACH_SEND_INVALID_DATA: \\\n");
+  fprintf(file, "\tcase MACH_SEND_INVALID_DEST: \\\n");
+  fprintf(file, "\tcase MACH_SEND_INVALID_HEADER: \\\n");
   fprintf(file, "\t\tmig_put_reply_port(InP->Head.msgh_reply_port); \\\n");
+  fprintf(file, "\t\tbreak; \\\n");
+  if (timeout) {
+	  fprintf(file, "\tcase MACH_SEND_TIMED_OUT: \\\n");
+	  fprintf(file, "\tcase MACH_RCV_TIMED_OUT: \\\n");
+  }
+  fprintf(file, "\tdefault: \\\n");
+  fprintf(file, "\t\tmig_dealloc_reply_port(InP->Head.msgh_reply_port); \\\n");
   fprintf(file, "\t} \\\n}\n");
   fprintf(file, "#endif\t/* %s */\n", name);
   fprintf(file, "\n");
