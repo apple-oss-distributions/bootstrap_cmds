@@ -856,9 +856,8 @@ WriteRequestNDRConvertFloatRepArgUse(FILE *file, argument_t *arg)
     WriteRequestNDRConvertArgUse(file, arg, "float_rep");
 }
 
-
 static void
-WriteCheckArgSize(FILE *file, register argument_t *arg)
+WriteCalcArgSize(FILE *file, register argument_t *arg)
 {
   register ipc_type_t *ptype = arg->argType;
 
@@ -886,31 +885,57 @@ WriteCheckArgSize(FILE *file, register argument_t *arg)
 }
 
 static void
+WriteCheckArgSize(FILE *file, routine_t *rt, argument_t *arg, const char *comparator)
+{
+  register ipc_type_t *ptype = arg->argType;
+
+
+  fprintf(file, "\tif (((msgh_size - ");
+  rtMinRequestSize(file, rt, "__Request");
+  fprintf(file, ") ");
+  if (PackMsg == FALSE) {
+	  fprintf(file, "%s %d)", comparator, ptype->itTypeSize + ptype->itPadSize);
+  } else if (IS_OPTIONAL_NATIVE(ptype)) {
+	  fprintf(file, "%s (In%dP->__Present__%s ? _WALIGNSZ_(%s) : 0))" , comparator, arg->argRequestPos, arg->argMsgField, ptype->itServerType);
+  } else {
+    register ipc_type_t *btype = ptype->itElement;
+    argument_t *count = arg->argCount;
+    int multiplier = btype->itTypeSize;
+
+    if (multiplier > 1)
+      fprintf(file, "/ %d ", multiplier);
+    fprintf(file, "%s ", comparator);
+    if (btype->itTypeSize % itWordAlign != 0)
+      fprintf(file, "_WALIGN_(");
+    fprintf(file, "In%dP->%s", count->argRequestPos, count->argMsgField);
+    if (btype->itTypeSize % itWordAlign != 0)
+      fprintf(file, ")");
+    fprintf(file, ") ||\n\t    (msgh_size %s ", comparator);
+    rtMinRequestSize(file, rt, "__Request");
+    fprintf(file, " + ");
+    WriteCalcArgSize(file, arg);
+    fprintf(file, ")");
+  }
+  fprintf(file, ")\n\t\treturn MIG_BAD_ARGUMENTS;\n");
+}
+
+static void
 WriteCheckMsgSize(FILE *file, register argument_t *arg)
 {
   register routine_t *rt = arg->argRoutine;
-
-  /* If there aren't any more In args after this, then
-     we can use the msgh_size_delta value directly in
-     the TypeCheck conditional. */
 
   if (arg->argCount && !arg->argSameCount)
     WriteRequestNDRConvertIntRepOneArgUse(file, arg->argCount);
   if (arg->argRequestPos == rt->rtMaxRequestPos)  {
     fprintf(file, "#if\t__MigTypeCheck\n");
-    fprintf(file, "\tif (msgh_size != ");
-    rtMinRequestSize(file, rt, "__Request");
-    fprintf(file, " + (");
-    WriteCheckArgSize(file, arg);
-    fprintf(file, "))\n");
-
-    fprintf(file, "\t\treturn MIG_BAD_ARGUMENTS;\n");
 
     /* 12/15/08 - gab: <rdar://problem/4900700>
        emit code to verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
     fprintf(file, "\t" "if ( In%dP->%s > %d )\n", arg->argCount->argRequestPos, arg->argCount->argMsgField, arg->argType->itNumber);
     fputs("\t\t" "return MIG_BAD_ARGUMENTS;\n", file);
     /* ...end... */
+
+    WriteCheckArgSize(file, rt, arg, "!=");
 
     fprintf(file, "#endif\t/* __MigTypeCheck */\n");
   }
@@ -928,26 +953,19 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
        divide btype->itTypeSize (see itCalculateSizeInfo). */
 
     fprintf(file, "\tmsgh_size_delta = ");
-    WriteCheckArgSize(file, arg);
+    WriteCalcArgSize(file, arg);
     fprintf(file, ";\n");
     fprintf(file, "#if\t__MigTypeCheck\n");
-
-    /* Don't decrement msgh_size until we've checked that
-       it won't underflow. */
-
-    if (LastVarArg)
-      fprintf(file, "\tif (msgh_size != ");
-    else
-      fprintf(file, "\tif (msgh_size < ");
-    rtMinRequestSize(file, rt, "__Request");
-    fprintf(file, " + msgh_size_delta)\n");
-    fprintf(file, "\t\treturn MIG_BAD_ARGUMENTS;\n");
 
     /* 12/15/08 - gab: <rdar://problem/4900700>
        emit code to verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
     fprintf(file, "\t" "if ( In%dP->%s > %d )\n", arg->argCount->argRequestPos, arg->argCount->argMsgField, arg->argType->itNumber);
     fputs("\t\t" "return MIG_BAD_ARGUMENTS;\n", file);
     /* ...end... */
+
+    /* Don't decrement msgh_size until we've checked that
+       it won't underflow. */
+    WriteCheckArgSize(file, rt, arg, LastVarArg ? "!=" : "<");
 
     if (!LastVarArg)
       fprintf(file, "\tmsgh_size -= msgh_size_delta;\n");
@@ -2330,11 +2348,10 @@ WriteOOLSizeCheck(FILE *file, routine_t *rt)
     
       if (!test) {
         int multiplier = (argCountPtr->argMultiplier > 1 || it->itSize > 8) ? argCountPtr->argMultiplier * it->itSize / 8 : 1;
-        fprintf(file, "\t%s" "if (%ssize != In%dP->%s%s",
-          tab, string, argCountPtr->argRequestPos, argCountPtr->argVarName, IS_MULTIPLE_KPD(it) ? "[i]" : "" );
+        fprintf(file, "\t%s" "if (%ssize ", tab, string);
         if (multiplier > 1)
-          fprintf(file, " * %d", multiplier);
-        fputs(")\n", file);
+          fprintf(file, "/ %d ", multiplier);
+	fprintf(file,"!= In%dP->%s%s)\n", argCountPtr->argRequestPos, argCountPtr->argVarName, IS_MULTIPLE_KPD(it) ? "[i]" : "");
 
         fprintf(file, "\t\t%s" "return MIG_TYPE_ERROR;\n", tab);
       }
@@ -2417,6 +2434,9 @@ WriteCheckRequest(FILE *file, routine_t *rt)
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertIntRepArgUse, akbSendNdr, "", "");
     fprintf(file, "\t}\n#endif\t/* defined(__NDR_convert__int_rep...) */\n\n");
 
+    // 12/23/08 - gab: <rdar://problem/4634360> validate size after int NDR conversion
+    WriteOOLSizeCheck(file, rt);
+
     fprintf(file, "#if\t");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertCharRepArgCond, akbSendNdr, " || \\\n\t", "\n");
     fprintf(file, "\tif (In0P->NDR.char_rep != NDR_record.char_rep) {\n");
@@ -2428,13 +2448,13 @@ WriteCheckRequest(FILE *file, routine_t *rt)
     fprintf(file, "\tif (In0P->NDR.float_rep != NDR_record.float_rep) {\n");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertFloatRepArgUse, akbSendNdr, "", "");
     fprintf(file, "\t}\n#endif\t/* defined(__NDR_convert__float_rep...) */\n\n");
+  } else {
+    // 12/23/08 - gab: <rdar://problem/4634360>
+   WriteOOLSizeCheck(file, rt);
   }
 
   // 07/10/08 - gab: <rdar://problem/4636934>
   WriteStringTerminatorCheck(file, rt);
-  
-  // 12/23/08 - gab: <rdar://problem/4634360>
-  WriteOOLSizeCheck(file, rt);
   
   fprintf(file, "\treturn MACH_MSG_SUCCESS;\n");
   fprintf(file, "}\n");

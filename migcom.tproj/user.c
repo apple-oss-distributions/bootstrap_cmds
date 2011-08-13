@@ -1653,7 +1653,7 @@ WriteExtractArgValueNormal(FILE *file, register argument_t *arg)
 }
 
 static void
-WriteCheckArgSize(FILE *file, register argument_t *arg)
+WriteCalcArgSize(FILE *file, register argument_t *arg)
 {
   register ipc_type_t *ptype = arg->argType;
   register ipc_type_t *btype = ptype->itElement;
@@ -1663,16 +1663,46 @@ WriteCheckArgSize(FILE *file, register argument_t *arg)
   /* If the base type size of the data field isn`t a multiple of 4,
      we have to round up. */
   if (btype->itTypeSize % itWordAlign != 0)
-    fprintf(file, "_WALIGN_");
-  fprintf(file, "(");
-  
-  if (multiplier > 1)
-    fprintf(file, "%d * ", multiplier);
+    fprintf(file, "_WALIGN_(");
   
   fprintf(file, "Out%dP->%s", count->argReplyPos, count->argMsgField);
-  
-  fprintf(file, ")");
+  if (multiplier > 1)
+    fprintf(file, " * %d", multiplier);
+
+  if (btype->itTypeSize % itWordAlign != 0)
+    fprintf(file, ")");
 }
+
+static void
+WriteCheckArgSize(FILE *file, routine_t *rt, argument_t *arg, const char *comparator)
+{
+  register ipc_type_t *ptype = arg->argType;
+  register ipc_type_t *btype = ptype->itElement;
+  argument_t *count = arg->argCount;
+  int multiplier = btype->itTypeSize;
+  
+  fprintf(file, "\tif (((msgh_size - ");
+  rtMinReplySize(file, rt, "__Reply");
+  fprintf(file, ")");
+  if (multiplier > 1)
+	  fprintf(file, " / %d", multiplier);
+  fprintf(file, " %s ", comparator);
+  
+  /* If the base type size of the data field isn`t a multiple of 4,
+     we have to round up. */
+  if (btype->itTypeSize % itWordAlign != 0)
+    fprintf(file, "_WALIGN_(");
+  fprintf(file, "Out%dP->%s", count->argReplyPos, count->argMsgField);
+  if (btype->itTypeSize % itWordAlign != 0)
+    fprintf(file, ")");
+  fprintf(file, ") || \n\t    (msgh_size %s ", comparator);
+  rtMinReplySize(file, rt, "__Reply");
+  fprintf(file, " + ");
+  WriteCalcArgSize(file, arg);
+  fprintf(file, ")");
+  fprintf(file, ")\n\t\t{ return MIG_TYPE_ERROR ; }\n");
+}
+
 
 /* NDR Conversion routines */
 
@@ -1806,12 +1836,6 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
   
   if (arg->argReplyPos == rt->rtMaxReplyPos) {
     fprintf(file, "#if\t__MigTypeCheck\n");
-    fprintf(file, "\tif (msgh_size != ");
-    rtMinReplySize(file, rt, "__Reply");
-    fprintf(file, " + (");
-    WriteCheckArgSize(file, arg);
-    fprintf(file, "))\n");
-    fprintf(file, "\t\t{ return MIG_TYPE_ERROR ; }\n");
 
     /* 12/15/08 - gab: <rdar://problem/4900700>
      * emit code to verify that the server-code-provided count does not exceed the maximum count allowed by the type.
@@ -1820,6 +1844,8 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
     fputs("\t\t" "return MIG_TYPE_ERROR;\n", file);
     /* ...end... */
     
+    WriteCheckArgSize(file, rt, arg, "!=");
+
     fprintf(file, "#endif\t/* __MigTypeCheck */\n");
   }
   else {
@@ -1836,19 +1862,10 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
        divide btype->itTypeSize (see itCalculateSizeInfo). */
     
     fprintf(file, "\tmsgh_size_delta = ");
-    WriteCheckArgSize(file, arg);
+    WriteCalcArgSize(file, arg);
     fprintf(file, ";\n");
     fprintf(file, "#if\t__MigTypeCheck\n");
-    
-    /* Don't decrement msgh_size until we've checked that
-       it won't underflow. */
-    
-    fprintf(file, "\t" "if (msgh_size %s ", LastVarArg ? "!=" : "<");
-    rtMinReplySize(file, rt, "__Reply");
-    fprintf(file, " + msgh_size_delta)\n");
-    fprintf(file, "\t\t{ return MIG_TYPE_ERROR; }\n");
-    
-    
+
     /* 12/15/08 - gab: <rdar://problem/4900700>
      * emit code to verify that the server-code-provided count does not exceed the maximum count allowed by the type.
      */
@@ -1856,6 +1873,8 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
     fputs("\t\t" "return MIG_TYPE_ERROR;\n", file);
     /* ...end... */
     
+    WriteCheckArgSize(file, rt, arg, LastVarArg ? "!=" : "<");
+
     if (!LastVarArg)
       fprintf(file, "\tmsgh_size -= msgh_size_delta;\n");
     
