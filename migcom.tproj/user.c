@@ -2,23 +2,22 @@
  * Copyright (c) 1999-2003, 2008-2009 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * "Portions Copyright (c) 1999, 2008 Apple Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 2.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
- *
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
- *
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -229,9 +228,15 @@ WriteMachErrorDefines(FILE *file)
 }
 
 static void
-WriteNDRDefines(FILE *file)
+WriteMIGCheckDefines(FILE *file)
 {
   fprintf(file, "#define\t__MIG_check__Reply__%s_subsystem__ 1\n", SubsystemName);
+  fprintf(file, "\n");
+}
+  
+static void
+WriteNDRDefines(FILE *file)
+{
   fprintf(file, "#define\t__NDR_convert__Reply__%s_subsystem__ 1\n", SubsystemName);
   fprintf(file, "#define\t__NDR_convert__mig_reply_error_subsystem__ 1\n");
   fprintf(file, "\n");
@@ -245,7 +250,9 @@ static void
 WriteProlog(FILE *file, statement_t *stats)
 {
   WriteIdentificationString(file);
-  WriteNDRDefines(file);
+  WriteMIGCheckDefines(file);
+  if (CheckNDR)
+	  WriteNDRDefines(file);
   WriteMyIncludes(file, stats);
   WriteBogusDefines(file);
   WriteMachErrorDefines(file);
@@ -584,9 +591,9 @@ WriteMsgSendReceive(FILE *file, routine_t *rt)
   
   fprintf(file, "\tmsg_result = mach_msg(&Out0P->Head, MACH_RCV_MSG|%s%s%s, 0, (mach_msg_size_t)sizeof(Reply), InP->Head.msgh_local_port, %s, MACH_PORT_NULL);\n",
           rt->rtUserImpl != 0 ? "MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0)|" : "",
-          rt->rtWaitTime != argNULL ? "MACH_RCV_TIMEOUT|" : "",
+          (rt->rtWaitTime != argNULL && akIdent(rt->rtWaitTime->argKind) == akeWaitTime) ? "MACH_RCV_TIMEOUT|" : "",
           rt->rtMsgOption->argVarName,
-          rt->rtWaitTime != argNULL ? rt->rtWaitTime->argVarName : "MACH_MSG_TIMEOUT_NONE");
+          (rt->rtWaitTime != argNULL && akIdent(rt->rtWaitTime->argKind) == akeWaitTime) ? rt->rtWaitTime->argVarName : "MACH_MSG_TIMEOUT_NONE");
   WriteApplMacro(file, "Send", "After", rt);
   WriteMsgCheckReceive(file, rt, "MACH_MSG_SUCCESS");
   fprintf(file, "\n");
@@ -621,7 +628,8 @@ WriteMsgRPC(FILE *file, routine_t *rt)
   if (rt->rtOverwrite) {
     fprintf(file, "\tmsg_result = mach_msg_overwrite(&InP->Head, MACH_SEND_MSG|MACH_RCV_MSG|MACH_RCV_OVERWRITE|%s%s%s, %s, (mach_msg_size_t)sizeof(Reply), InP->Head.msgh_reply_port, %s, MACH_PORT_NULL, ",
             rt->rtUserImpl != 0 ? "MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0)|" : "",
-            rt->rtWaitTime != argNULL ? "MACH_SEND_TIMEOUT|MACH_RCV_TIMEOUT|" : "",
+            rt->rtWaitTime != argNULL ? 
+	        (akIdent(rt->rtWaitTime->argKind) == akeWaitTime ? "MACH_SEND_TIMEOUT|MACH_RCV_TIMEOUT|" : "MACH_SEND_TIMEOUT|") : "",
             rt->rtMsgOption->argVarName,
             SendSize,
             rt->rtWaitTime != argNULL? rt->rtWaitTime->argVarName : "MACH_MSG_TIMEOUT_NONE");
@@ -630,7 +638,8 @@ WriteMsgRPC(FILE *file, routine_t *rt)
   else {
     fprintf(file, "\tmsg_result = mach_msg(&InP->Head, MACH_SEND_MSG|MACH_RCV_MSG|%s%s%s, %s, (mach_msg_size_t)sizeof(Reply), InP->Head.msgh_reply_port, %s, MACH_PORT_NULL);\n",
             rt->rtUserImpl != 0 ? "MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0)|" : "",
-            rt->rtWaitTime != argNULL ? "MACH_SEND_TIMEOUT|MACH_RCV_TIMEOUT|" : "",
+            rt->rtWaitTime != argNULL ?
+	        (akIdent(rt->rtWaitTime->argKind) == akeWaitTime ? "MACH_SEND_TIMEOUT|MACH_RCV_TIMEOUT|" : "MACH_SEND_TIMEOUT|") : "",
             rt->rtMsgOption->argVarName,
             SendSize,
             rt->rtWaitTime != argNULL? rt->rtWaitTime->argVarName : "MACH_MSG_TIMEOUT_NONE");
@@ -1329,10 +1338,11 @@ WriteRetCodeCheck(FILE *file, routine_t *rt)
     fprintf(file, "\tif (Out0P->RetCode != KERN_SUCCESS) {\n");
   else
     fprintf(file, "\tif (msgh_simple) {\n");
-  
-  fprintf(file, "#ifdef\t__NDR_convert__mig_reply_error_t__defined\n");
-  fprintf(file, "\t\t__NDR_convert__mig_reply_error_t((mig_reply_error_t *)Out0P);\n");
-  fprintf(file, "#endif\t/* __NDR_convert__mig_reply_error_t__defined */\n");
+  if (CheckNDR) {
+    fprintf(file, "#ifdef\t__NDR_convert__mig_reply_error_t__defined\n");
+    fprintf(file, "\t\t__NDR_convert__mig_reply_error_t((mig_reply_error_t *)Out0P);\n");
+    fprintf(file, "#endif\t/* __NDR_convert__mig_reply_error_t__defined */\n");
+  }
   fprintf(file, "\t\treturn ((mig_reply_error_t *)Out0P)->RetCode;\n");
   fprintf(file, "\t}\n");
   fprintf(file, "\n");
@@ -1686,16 +1696,8 @@ WriteCheckArgSize(FILE *file, routine_t *rt, argument_t *arg, const char *compar
   fprintf(file, ")");
   if (multiplier > 1)
 	  fprintf(file, " / %d", multiplier);
-  fprintf(file, " %s ", comparator);
-  
-  /* If the base type size of the data field isn`t a multiple of 4,
-     we have to round up. */
-  if (btype->itTypeSize % itWordAlign != 0)
-    fprintf(file, "_WALIGN_(");
-  fprintf(file, "Out%dP->%s", count->argReplyPos, count->argMsgField);
-  if (btype->itTypeSize % itWordAlign != 0)
-    fprintf(file, ")");
-  fprintf(file, ") || \n\t    (msgh_size %s ", comparator);
+  fprintf(file, "< Out%dP->%s) ||\n", count->argReplyPos, count->argMsgField);
+  fprintf(file, "\t    (msgh_size %s ", comparator);
   rtMinReplySize(file, rt, "__Reply");
   fprintf(file, " + ");
   WriteCalcArgSize(file, arg);
@@ -1831,7 +1833,7 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
      we can use the msgh_size_delta value directly in
      the TypeCheck conditional. */
   
-  if (arg->argCount && !arg->argSameCount)
+  if (CheckNDR && arg->argCount && !arg->argSameCount)
     WriteReplyNDRConvertIntRepOneArgUse(file, arg->argCount);
   
   if (arg->argReplyPos == rt->rtMaxReplyPos) {
@@ -2635,11 +2637,14 @@ WriteCheckReply(FILE *file, routine_t *rt)
     return;
   
   fprintf(file, "\n");
-  fprintf(file, "#if ( __MigTypeCheck || __NDR_convert__ )\n");
+  fprintf(file, "#if ( __MigTypeCheck ");
+  if (CheckNDR)
+	  fprintf(file, "|| __NDR_convert__ ");
+  fprintf(file, ")\n");
   fprintf(file, "#if __MIG_check__Reply__%s_subsystem__\n", SubsystemName);
   fprintf(file, "#if !defined(__MIG_check__Reply__%s_t__defined)\n", rt->rtName);
   fprintf(file, "#define __MIG_check__Reply__%s_t__defined\n", rt->rtName);
-  if (akCheck(rt->rtNdrCode->argKind, akbReply)) {
+  if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbReply)) {
     WriteList(file, rt->rtArgs, WriteReplyNDRConvertIntRepArgDecl, akbReturnNdr, "\n", "\n");
     WriteList(file, rt->rtArgs, WriteReplyNDRConvertCharRepArgDecl, akbReturnNdr, "\n", "\n");
     WriteList(file, rt->rtArgs, WriteReplyNDRConvertFloatRepArgDecl, akbReturnNdr, "\n", "\n");
@@ -2675,7 +2680,7 @@ WriteCheckReply(FILE *file, routine_t *rt)
      return it directly. */
   
   if (rt->rtNoReplyArgs && !rt->rtUserImpl) {
-    if (akCheck(rt->rtNdrCode->argKind, akbReply) && rt->rtRetCode)
+    if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbReply) && rt->rtRetCode)
       WriteReplyNDRConvertIntRepOneArgUse(file, rt->rtRetCode);
     WriteReturn(file, rt, "\t", stRetCode, "\n");
   }
@@ -2712,7 +2717,7 @@ WriteCheckReply(FILE *file, routine_t *rt)
       }
     }
     
-    if (akCheck(rt->rtNdrCode->argKind, akbReply)) {
+    if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbReply)) {
       fprintf(file, "#if\t");
       WriteList(file, rt->rtArgs, WriteReplyNDRConvertIntRepArgCond, akbReturnNdr, " || \\\n\t", "\n");
       fprintf(file, "\tif (Out0P->NDR.int_rep != NDR_record.int_rep) {\n");
@@ -2736,8 +2741,10 @@ WriteCheckReply(FILE *file, routine_t *rt)
   fprintf(file, "}\n");
   fprintf(file, "#endif /* !defined(__MIG_check__Reply__%s_t__defined) */\n", rt->rtName);
   fprintf(file, "#endif /* __MIG_check__Reply__%s_subsystem__ */\n", SubsystemName);
-  fprintf(file, "#endif /* ( __MigTypeCheck || __NDR_convert__ ) */\n");
-  fprintf(file, "\n");
+  fprintf(file, "#endif /* ( __MigTypeCheck ");
+  if (CheckNDR)
+	  fprintf(file, "|| __NDR_convert__ ");
+  fprintf(file, ") */\n\n");
 }
 
 static void

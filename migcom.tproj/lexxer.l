@@ -71,7 +71,7 @@ FileName	({QString}|{AString})
 #include <mach/std_types.h>
 #include "statement.h"
 #include "global.h"
-#include "parser.h"
+#include "y.tab.h" // was parser.h
 #include "lexxer.h"
 #include "mig_machine.h"
 
@@ -136,6 +136,7 @@ extern void yyerror();
 <Normal>[Ww][Aa][Ii][Tt][Tt][Ii][Mm][Ee]	RETURN(syWaitTime);
 <Normal>[Ss][Ee][Nn][Dd][Tt][Ii][Mm][Ee]	RETURN(sySendTime);
 <Normal>[Nn][Oo][Ww][Aa][Ii][Tt][Tt][Ii][Mm][Ee]	RETURN(syNoWaitTime);
+<Normal>[Nn][Oo][Ss][Ee][Nn][Dd][Tt][Ii][Mm][Ee]	RETURN(syNoSendTime);
 <Normal>[Ii][Nn]				RETURN(syIn);
 <Normal>[Oo][Uu][Tt]				RETURN(syOut);
 <Normal>[Uu][Ss][Ee][Rr][Ii][Mm][Pp][Ll]		RETURN(syUserImpl);

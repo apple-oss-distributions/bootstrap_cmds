@@ -112,7 +112,7 @@ fi
 until [ $# -eq 0 ]
 do
     case "$1" in
-	-[dtqkKQvVtTrRsSlLxX] ) migflags=( "${migflags[@]}" "$1" ); shift;;
+	-[dtqkKQvVtTrRsSlLxXnN] ) migflags=( "${migflags[@]}" "$1" ); shift;;
 	-i	) sawI=1; migflags=( "${migflags[@]}" "$1" "$2" ); shift; shift;;
 	-user   )  user="$2"; if [ ! "${sawI-}" ]; then migflags=( "${migflags[@]}" "$1" "$2" ); fi; shift; shift;;
 	-server )  server="$2";  migflags=( "${migflags[@]}" "$1" "$2" ); shift; shift;;
@@ -137,7 +137,7 @@ done
 until [ $# -eq 0 ]
 do
     case "$1" in
-	-[dtqkKQvVtTrRsSlLxX] ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
+	-[dtqkKQvVtTrRsSlLxXnN] ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
 	-i	) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-user   ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-server ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;

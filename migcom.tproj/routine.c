@@ -2,23 +2,22 @@
  * Copyright (c) 1999, 2008 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * "Portions Copyright (c) 1999, 2008 Apple Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
- *
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
- *
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -857,7 +856,11 @@ rtCheckRoutineArg(routine_t *rt, argument_t *arg)
 
     case akeSendTime:
       if (rt->rtWaitTime != argNULL)
-        warn("multiple WaitTime/SendTime type args in %s; %s won't be used", rt->rtName, rt->rtWaitTime->argName);
+	      if (akIdent(rt->rtWaitTime->argKind) == akeWaitTime) {
+		      warn("SendTime type argument after a WaitTime in %s; SendTime %s won't be used", rt->rtName, arg->argName);
+		      break;
+	      } else 
+		      warn("multiple SendTime type args in %s; %s won't be used", rt->rtName, rt->rtWaitTime->argName);
       rt->rtWaitTime = arg;
       break;
 
@@ -1345,7 +1348,7 @@ rtProcessNdrCode(routine_t *rt)
  */
 
 static void
-rtAddWaitTime(routine_t *rt, identifier_t name)
+rtAddWaitTime(routine_t *rt, identifier_t name, arg_kind_t kind)
 {
   register argument_t *arg = argAlloc();
   argument_t **loc;
@@ -1353,7 +1356,7 @@ rtAddWaitTime(routine_t *rt, identifier_t name)
   arg->argName = "dummy WaitTime arg";
   arg->argVarName = name;
   arg->argType = itWaitTimeType;
-  arg->argKind = akeWaitTime;
+  arg->argKind = kind;
   rt->rtWaitTime = arg;
 
   /* add wait-time after msg-option, if possible */
@@ -1685,9 +1688,12 @@ rtCheckRoutine(register routine_t *rt)
     else
       rtAddMsgOption(rt, MsgOption);
   }
-  if ((rt->rtWaitTime == argNULL) &&
-      (WaitTime != strNULL))
-    rtAddWaitTime(rt, WaitTime);
+  if (rt->rtWaitTime == argNULL) {
+	  if (WaitTime != strNULL)
+		  rtAddWaitTime(rt, WaitTime, akeWaitTime);
+	  else if (SendTime != strNULL)
+		  rtAddWaitTime(rt, SendTime, akeSendTime);
+  }
 
 
   /* Now that all the arguments are in place, do more checking. */
@@ -1698,10 +1704,6 @@ rtCheckRoutine(register routine_t *rt)
   if (rt->rtOneWay) {
     if (rtCheckMask(rt->rtArgs, akbReturn) || rt->rtUserImpl)
       error("%s %s has OUT argument", rtRoutineKindToStr(rt->rtKind), rt->rtName);
-  }
-  else {
-    if ((rt->rtWaitTime != argNULL) && (rt->rtWaitTime->argKind == akeSendTime))
-      error("%s %s SendTime not supported on routines, use WaitTime", rtRoutineKindToStr(rt->rtKind), rt->rtName);
   }
 
   /* If there were any errors, don't bother calculating more info

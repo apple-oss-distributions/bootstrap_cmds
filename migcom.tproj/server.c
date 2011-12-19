@@ -2,23 +2,22 @@
  * Copyright (c) 1999-2009 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * "Portions Copyright (c) 1999, 2008 Apple Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
- *
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
- *
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -205,11 +204,17 @@ WriteForwardDeclarations(FILE *file, statement_t *stats)
 }
 
 static void
+WriteMIGCheckDefines(FILE *file)
+{
+   fprintf(file, "#define\t__MIG_check__Request__%s_subsystem__ 1\n", SubsystemName);
+   fprintf(file, "\n");
+}
+
+static void
 WriteNDRDefines(FILE *file)
 {
-  fprintf(file, "#define\t__MIG_check__Request__%s_subsystem__ 1\n", SubsystemName);
-  fprintf(file, "#define\t__NDR_convert__Request__%s_subsystem__ 1\n", SubsystemName);
-  fprintf(file, "\n");
+   fprintf(file, "#define\t__NDR_convert__Request__%s_subsystem__ 1\n", SubsystemName);
+   fprintf(file, "\n");
 }
 
 static void
@@ -219,8 +224,9 @@ WriteProlog(FILE *file, statement_t *stats)
   fprintf(file, "\n");
   fprintf(file, "/* Module %s */\n", SubsystemName);
   fprintf(file, "\n");
-
-  WriteNDRDefines(file);
+  WriteMIGCheckDefines(file);
+  if (CheckNDR)
+	  WriteNDRDefines(file);
   WriteMyIncludes(file, stats);
   WriteBogusDefines(file);
   WriteApplDefaults(file, "Rcv");
@@ -755,7 +761,7 @@ void
 WriteRequestNDRConvertCharRepArgCond(FILE *file, argument_t *arg)
 {
   routine_t *rt = arg->argRoutine;
-
+  
   if (akIdent(arg->argKind) != akeCount && akIdent(arg->argKind) != akeCountInOut)
     fprintf(file, "defined(__NDR_convert__char_rep__Request__%s_t__%s__defined)", rt->rtName, arg->argMsgField);
   else
@@ -904,13 +910,8 @@ WriteCheckArgSize(FILE *file, routine_t *rt, argument_t *arg, const char *compar
 
     if (multiplier > 1)
       fprintf(file, "/ %d ", multiplier);
-    fprintf(file, "%s ", comparator);
-    if (btype->itTypeSize % itWordAlign != 0)
-      fprintf(file, "_WALIGN_(");
-    fprintf(file, "In%dP->%s", count->argRequestPos, count->argMsgField);
-    if (btype->itTypeSize % itWordAlign != 0)
-      fprintf(file, ")");
-    fprintf(file, ") ||\n\t    (msgh_size %s ", comparator);
+    fprintf(file, "< In%dP->%s) ||\n", count->argRequestPos, count->argMsgField);
+    fprintf(file, "\t    (msgh_size %s ", comparator);
     rtMinRequestSize(file, rt, "__Request");
     fprintf(file, " + ");
     WriteCalcArgSize(file, arg);
@@ -2376,11 +2377,14 @@ WriteCheckRequest(FILE *file, routine_t *rt)
   InitKPD_Disciplines(rt->rtArgs);
 
   fprintf(file, "\n");
-  fprintf(file, "#if ( __MigTypeCheck || __NDR_convert__ )\n");
+  fprintf(file, "#if ( __MigTypeCheck ");
+  if (CheckNDR) 
+	  fprintf(file, "|| __NDR_convert__ ");
+  fprintf(file, ")\n");
   fprintf(file, "#if __MIG_check__Request__%s_subsystem__\n", SubsystemName);
   fprintf(file, "#if !defined(__MIG_check__Request__%s_t__defined)\n", rt->rtName);
   fprintf(file, "#define __MIG_check__Request__%s_t__defined\n", rt->rtName);
-  if (akCheck(rt->rtNdrCode->argKind, akbRequest)) {
+  if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbRequest)) {
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertIntRepArgDecl, akbSendNdr, "", "");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertCharRepArgDecl, akbSendNdr, "", "");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertFloatRepArgDecl, akbSendNdr, "", "");
@@ -2427,7 +2431,7 @@ WriteCheckRequest(FILE *file, routine_t *rt)
     }
   }
 
-  if (akCheck(rt->rtNdrCode->argKind, akbRequest)) {
+  if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbRequest)) {
     fprintf(file, "#if\t");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertIntRepArgCond, akbSendNdr, " || \\\n\t", "\n");
     fprintf(file, "\tif (In0P->NDR.int_rep != NDR_record.int_rep) {\n");
@@ -2460,7 +2464,10 @@ WriteCheckRequest(FILE *file, routine_t *rt)
   fprintf(file, "}\n");
   fprintf(file, "#endif /* !defined(__MIG_check__Request__%s_t__defined) */\n", rt->rtName);
   fprintf(file, "#endif /* __MIG_check__Request__%s_subsystem__ */\n", SubsystemName);
-  fprintf(file, "#endif /* ( __MigTypeCheck || __NDR_convert__ ) */\n");
+  fprintf(file, "#endif /* ( __MigTypeCheck ");
+  if (CheckNDR)
+	  fprintf(file, "|| __NDR_convert__ ");
+  fprintf(file, ") */\n");
   fprintf(file, "\n");
 }
 
