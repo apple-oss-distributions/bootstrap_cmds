@@ -357,9 +357,7 @@ WriteDispatcher(FILE *file)
       descr_count += rtCountArgDescriptors(rt->rtArgs, (int *) 0);
     }
   fprintf(file, "\n");
-  /* 11/30/09 - gab: <rdar://problem/5679615>
-   * MIG-generated code should be consistent in its use of mig_external
-   */
+
   WriteMigExternal(file);
   fprintf(file, "boolean_t %s(\n", ServerDemux);
   fprintf(file, "\t\tmach_msg_header_t *InHeadP,\n");

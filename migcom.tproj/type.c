@@ -206,9 +206,9 @@ itCalculateSizeInfo(register ipc_type_t *it)
      */
     u_int bytes;
     if (IS_MULTIPLE_KPD(it))
-      bytes = it->itKPD_Number * sizeof(mach_msg_descriptor_t);
+      bytes = it->itKPD_Number * 12 /* sizeof(mach_msg_descriptor_t) */;
     else
-      bytes = sizeof(mach_msg_descriptor_t);
+      bytes = 12 /* sizeof(mach_msg_descriptor_t) */;
     
     it->itTypeSize = bytes;
     it->itPadSize = 0;

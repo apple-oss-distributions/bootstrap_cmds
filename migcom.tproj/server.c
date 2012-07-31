@@ -264,15 +264,14 @@ WriteRoutineEntries(FILE *file, statement_t *stats)
   char *sig_array, *rt_name;
   int arg_count, descr_count;
   int offset = 0;
-  int serverSubsysNameLen = strlen(ServerSubsys);
+  size_t serverSubsysNameLen = strlen(ServerSubsys);
 
   fprintf(file, "\t{\n");
   for (stat = stats; stat != stNULL; stat = stat->stNext)
     if (stat->stKind == skRoutine) {
       register  routine_t *rt = stat->stRoutine;
-      int       rtNameLen = strlen(rt->rtName);
+      size_t       rtNameLen = strlen(rt->rtName);
 
-      // 10/30/06 - GAB: <rdar://problem/4672570>
       // Include length of rt->rtName in calculation of necessary buffer size, since that string
       // is actually written into the buffer along with the Server Subsystem name.
       sig_array = (char *) malloc(serverSubsysNameLen + rtNameLen + 80);
@@ -337,9 +336,6 @@ WriteSubsystem(FILE *file, statement_t *stats)
     }
   fprintf(file, "\n");
   if (ServerHeaderFileName == strNULL) {
-  	/* 11/30/09 - gab: <rdar://problem/5679615>
-     * MIG-generated code should be consistent in its use of mig_external
-     */
     WriteMigExternal(file);
     fprintf(file, "boolean_t %s(", ServerDemux);
     if (BeAnsiC) {
@@ -930,8 +926,7 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
   if (arg->argRequestPos == rt->rtMaxRequestPos)  {
     fprintf(file, "#if\t__MigTypeCheck\n");
 
-    /* 12/15/08 - gab: <rdar://problem/4900700>
-       emit code to verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
+    /* verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
     fprintf(file, "\t" "if ( In%dP->%s > %d )\n", arg->argCount->argRequestPos, arg->argCount->argMsgField, arg->argType->itNumber);
     fputs("\t\t" "return MIG_BAD_ARGUMENTS;\n", file);
     /* ...end... */
@@ -958,8 +953,7 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
     fprintf(file, ";\n");
     fprintf(file, "#if\t__MigTypeCheck\n");
 
-    /* 12/15/08 - gab: <rdar://problem/4900700>
-       emit code to verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
+    /* verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
     fprintf(file, "\t" "if ( In%dP->%s > %d )\n", arg->argCount->argRequestPos, arg->argCount->argMsgField, arg->argType->itNumber);
     fputs("\t\t" "return MIG_BAD_ARGUMENTS;\n", file);
     /* ...end... */
@@ -1962,7 +1956,7 @@ WritePackArgValueVariable(FILE *file, register argument_t *arg)
    * only itString are treated here so far
    */
   if (it->itString) {
-    /* 11/25/09 - gab: <rdar://problem/6237652>
+    /*
      * Emit logic to call strlen to calculate the size of the argument, and ensure that it fits within the 32-bit result field
      * in the Reply, when targeting a 64-bit architecture. If a 32-bit architecture is the target, we emit code to just call
      * strlen() directly (since it'll return a 32-bit value that is guaranteed to fit).
@@ -2236,7 +2230,6 @@ InitKPD_Disciplines(argument_t *args)
 
 static void WriteStringTerminatorCheck(FILE *file, routine_t *rt)
 {
-  // 07/10/08 - gab: <rdar://problems/4636934>
   // generate code to verify that the length of a C string is not greater than the size of the
   // buffer in which it is stored.
   argument_t  *argPtr;
@@ -2313,7 +2306,6 @@ static void WriteStringTerminatorCheck(FILE *file, routine_t *rt)
 static void
 WriteOOLSizeCheck(FILE *file, routine_t *rt)
 {
-  /* 12/23/2008 - gab: <rdar://problem/4634360> */
   /* Emit code to validate the actual size of ool data vs. the reported size */
 
   argument_t  *argPtr;
@@ -2438,7 +2430,6 @@ WriteCheckRequest(FILE *file, routine_t *rt)
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertIntRepArgUse, akbSendNdr, "", "");
     fprintf(file, "\t}\n#endif\t/* defined(__NDR_convert__int_rep...) */\n\n");
 
-    // 12/23/08 - gab: <rdar://problem/4634360> validate size after int NDR conversion
     WriteOOLSizeCheck(file, rt);
 
     fprintf(file, "#if\t");
@@ -2453,11 +2444,9 @@ WriteCheckRequest(FILE *file, routine_t *rt)
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertFloatRepArgUse, akbSendNdr, "", "");
     fprintf(file, "\t}\n#endif\t/* defined(__NDR_convert__float_rep...) */\n\n");
   } else {
-    // 12/23/08 - gab: <rdar://problem/4634360>
    WriteOOLSizeCheck(file, rt);
   }
 
-  // 07/10/08 - gab: <rdar://problem/4636934>
   WriteStringTerminatorCheck(file, rt);
   
   fprintf(file, "\treturn MACH_MSG_SUCCESS;\n");

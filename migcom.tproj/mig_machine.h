@@ -1,10 +1,16 @@
 #if !defined(_MIG_MACHINE_H)
 #define _MIG_MACHINE_H
-#if defined(__i386__) || defined(__x86_64__)
-#include "i386/mig_machine.h"
-#elif defined(__ppc__) || defined(__ppc64__)
-#include "ppc/mig_machine.h"
-#else
-#error Architecture not supported
+
+#define machine_alignment(SZ,ESZ)   \
+(((SZ) = ((SZ) + 3) & ~3), (SZ) += (ESZ))
+
+#define machine_padding(BYTES)  \
+((BYTES & 3) ? (4 - (BYTES & 3)) : 0)
+
+#ifndef NBBY
+#define NBBY  8
 #endif
+
+#define PACK_MESSAGES TRUE
+
 #endif

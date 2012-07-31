@@ -47,14 +47,6 @@
 # the rights to redistribute these changes.
 #
 
-# 07/12/07 - gab: <rdar://problems/5202843>
-# added logic to determine location of script, so that proper location
-# of helper tools can be found relative to location of script.
-# (Thanks to rgm for the scripting help.)
-
-# 03/20/08 - gab: <rdar://problem/5774620>
-# added logic to pass an '-isysroot' command line option on to the preprocessor
-
 realpath()
 {
 	local FILE="$1"
@@ -104,10 +96,6 @@ if [ $? -ne 0 ]; then
 fi
 
 # parse out the arguments until we hit plain file name(s)
-
-# 05/08/07 - gab: <rdar://problem/5175104>
-# use array to collect all migcom parameters, to include proper quoting around pathname
-# parameters that may contain whitespace.
 
 until [ $# -eq 0 ]
 do

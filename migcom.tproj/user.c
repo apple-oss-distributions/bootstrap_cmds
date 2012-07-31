@@ -451,8 +451,6 @@ WriteRetCodeArg(FILE *file, register routine_t *rt)
   }
 }
 
-// 10/26/06 - GAB: <rdar://problem/4343113>
-// emit logic to prevent memory leaks if the call times out
 /*************************************************************
  *   Writes the logic to check for a message send timeout, and
  *   deallocate any relocated ool data so as not to leak.
@@ -471,8 +469,7 @@ WriteMsgCheckForTimeout(FILE *file, routine_t *rt)
       if (akCheck(arg_ptr->argKind, akbSendKPD) && arg_ptr->argKPD_Type == MACH_MSG_OOL_DESCRIPTOR) {
         //    generate code to test current arg address vs. address before the msg_send call
         //    if not at the same address, mig_deallocate the argument
-        // 11/19/09 - gab: <rdar://problem/7300079>: Emit typecast if necessary
-        fprintf(file, "\t\tif((vm_offset_t) InP->%s.address != (vm_offset_t) %s)\n", 
+        fprintf(file, "\t\tif((vm_offset_t) InP->%s.address != (vm_offset_t) %s)\n",
 		arg_ptr->argVarName, arg_ptr->argVarName);
         fprintf(file, "\t\t\t"   "mig_deallocate((vm_offset_t) InP->%s.address, "
 		"(vm_size_t) InP->%s.size);\n", arg_ptr->argVarName, arg_ptr->argVarName);
@@ -523,7 +520,6 @@ WriteMsgSend(FILE *file, routine_t *rt)
   
   WriteApplMacro(file, "Send", "After", rt);
   
-  // 10/26/06 - GAB: <rdar://problem/4343113>
   WriteMsgCheckForTimeout(file, rt);
   
   WriteReturn(file, rt, "\t", "msg_result", "\n");
@@ -648,7 +644,6 @@ WriteMsgRPC(FILE *file, routine_t *rt)
     fprintf(file,"#endif /* __MigKernelSpecificCode */\n");
   WriteApplMacro(file, "Send", "After", rt);
   
-  // 10/26/06 - GAB: <rdar://problem/4343113>
   WriteMsgCheckForTimeout(file, rt);
   
   WriteMsgCheckReceive(file, rt, "MACH_MSG_SUCCESS");
@@ -1839,7 +1834,7 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
   if (arg->argReplyPos == rt->rtMaxReplyPos) {
     fprintf(file, "#if\t__MigTypeCheck\n");
 
-    /* 12/15/08 - gab: <rdar://problem/4900700>
+    /*
      * emit code to verify that the server-code-provided count does not exceed the maximum count allowed by the type.
      */
     fprintf(file, "\t" "if ( Out%dP->%s > %d )\n", arg->argCount->argReplyPos, arg->argCount->argMsgField, arg->argType->itNumber);
@@ -1868,7 +1863,7 @@ WriteCheckMsgSize(FILE *file, register argument_t *arg)
     fprintf(file, ";\n");
     fprintf(file, "#if\t__MigTypeCheck\n");
 
-    /* 12/15/08 - gab: <rdar://problem/4900700>
+    /*
      * emit code to verify that the server-code-provided count does not exceed the maximum count allowed by the type.
      */
     fprintf(file, "\t" "if ( Out%dP->%s > %d )\n", arg->argCount->argReplyPos, arg->argCount->argMsgField, arg->argType->itNumber);
@@ -2200,8 +2195,9 @@ WriteShortCircInArgBefore(FILE *file, register argument_t *arg)
       if (!argIsOut(arg) && !(arg->argFlags & flConst)) {
         /* Have to copy it into a temp.  Use a stack var, if this would
          * not overflow the -maxonstack specification:
+         * Conservatively assume ILP32 thresholds
          */
-        if (it->itTypeSize <= sizeof(char *) ||
+        if (it->itTypeSize <= sizeof(natural_t) ||
             rtMessOnStack(arg->argRoutine) ||
             arg->argRoutine->rtTempBytesOnStack +
             it->itTypeSize <= MaxMessSizeOnStack) {
@@ -2425,7 +2421,8 @@ WriteShortCircRPC(FILE *file, register routine_t *rt)
       else
         continue;
       fprintf(file, "\tchar *_%sTemp_;\n", arg->argVarName);
-      rt->rtTempBytesOnStack += sizeof(char *);
+      /* Conservatively assume ILP32 thresholds */
+      rt->rtTempBytesOnStack += sizeof(natural_t);
     }
     
     /* Process the IN arguments, in order: */

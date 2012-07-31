@@ -699,18 +699,22 @@ SkipVFPrintf(FILE *file, register char *fmt, va_list pvar)
 static void
 vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar)
 {
+  va_list pvar2;
+  va_copy(pvar2, pvar);
+
   if (it->itStruct) {
+
     fprintf(file, "\t");
     (void) SkipVFPrintf(file, left, pvar);
     fprintf(file, " = ");
-    (void) SkipVFPrintf(file, right, pvar);
+    (void) SkipVFPrintf(file, right, pvar2);
     fprintf(file, ";\n");
   }
   else if (it->itString) {
     fprintf(file, "\t(void) mig_strncpy(");
     (void) SkipVFPrintf(file, left, pvar);
     fprintf(file, ", ");
-    (void) SkipVFPrintf(file, right, pvar);
+    (void) SkipVFPrintf(file, right, pvar2);
     fprintf(file, ", %d);\n", it->itTypeSize);
   }
   else {
@@ -718,9 +722,11 @@ vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar
     fprintf(file, "\t    * (sp) ");
     (void) SkipVFPrintf(file, left, pvar);
     fprintf(file, " = * (sp) ");
-    (void) SkipVFPrintf(file, right, pvar);
+    (void) SkipVFPrintf(file, right, pvar2);
     fprintf(file, ";\n\t}\n");
   }
+
+  va_end(pvar2);
 }
 
 
@@ -751,7 +757,9 @@ WriteCopyArg(FILE *file, argument_t *arg, char *left, char *right, ...)
     if (it->itVarArray && !it->itString) {
       fprintf(file, "\t    (void)memcpy(");
       (void) SkipVFPrintf(file, left, pvar);
+      va_end(pvar);
       fprintf(file, ", ");
+      va_start(pvar, right);
       (void) SkipVFPrintf(file, right, pvar);
       fprintf(file, ", %s);\n", arg->argCount->argVarName);
     }

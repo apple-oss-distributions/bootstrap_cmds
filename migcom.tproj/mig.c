@@ -110,12 +110,6 @@
 #include "global.h"
 #include "write.h"
 
-// 11/12/08 - gab: <rdar://problem/6352179>
-// we should never be built as an x86_64 binary...
-#ifdef __LP64__
-#error "migcom is not yet x86_64 compatible."
-#endif
-
 extern int yyparse();
 static FILE *myfopen();
 

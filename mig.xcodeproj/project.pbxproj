@@ -48,10 +48,8 @@
 		FCAD532E149BF58700CE0B4B /* global.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = global.h; sourceTree = "<group>"; };
 		FCAD532F149BF58700CE0B4B /* handler.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = handler.c; sourceTree = "<group>"; };
 		FCAD5330149BF58700CE0B4B /* header.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = header.c; sourceTree = "<group>"; };
-		FCAD5332149BF58700CE0B4B /* mig_machine.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mig_machine.h; sourceTree = "<group>"; };
 		FCAD5333149BF58700CE0B4B /* lexxer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = lexxer.h; sourceTree = "<group>"; };
 		FCAD5334149BF58700CE0B4B /* lexxer.l */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.lex; path = lexxer.l; sourceTree = "<group>"; };
-		FCAD5335149BF58700CE0B4B /* Makefile */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.make; path = Makefile; sourceTree = "<group>"; };
 		FCAD5337149BF58700CE0B4B /* mig.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = mig.1; sourceTree = "<group>"; };
 		FCAD5338149BF58700CE0B4B /* mig.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = mig.c; sourceTree = "<group>"; };
 		FCAD5339149BF58700CE0B4B /* mig.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; path = mig.sh; sourceTree = "<group>"; };
@@ -59,7 +57,6 @@
 		FCAD533B149BF58700CE0B4B /* mig_machine.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mig_machine.h; sourceTree = "<group>"; };
 		FCAD533C149BF58700CE0B4B /* migcom.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = migcom.1; sourceTree = "<group>"; };
 		FCAD5340149BF58700CE0B4B /* parser.y */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.yacc; path = parser.y; sourceTree = "<group>"; };
-		FCAD5342149BF58700CE0B4B /* mig_machine.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mig_machine.h; sourceTree = "<group>"; };
 		FCAD5343149BF58700CE0B4B /* routine.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = routine.c; sourceTree = "<group>"; };
 		FCAD5344149BF58700CE0B4B /* routine.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = routine.h; sourceTree = "<group>"; };
 		FCAD5345149BF58700CE0B4B /* server.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = server.c; sourceTree = "<group>"; };
@@ -121,10 +118,8 @@
 				FCAD532E149BF58700CE0B4B /* global.h */,
 				FCAD532F149BF58700CE0B4B /* handler.c */,
 				FCAD5330149BF58700CE0B4B /* header.c */,
-				FCAD5331149BF58700CE0B4B /* i386 */,
 				FCAD5333149BF58700CE0B4B /* lexxer.h */,
 				FCAD5334149BF58700CE0B4B /* lexxer.l */,
-				FCAD5335149BF58700CE0B4B /* Makefile */,
 				FCAD5337149BF58700CE0B4B /* mig.1 */,
 				FCAD5338149BF58700CE0B4B /* mig.c */,
 				FCAD5339149BF58700CE0B4B /* mig.sh */,
@@ -132,7 +127,6 @@
 				FCAD533B149BF58700CE0B4B /* mig_machine.h */,
 				FCAD533C149BF58700CE0B4B /* migcom.1 */,
 				FCAD5340149BF58700CE0B4B /* parser.y */,
-				FCAD5341149BF58700CE0B4B /* ppc */,
 				FCAD5343149BF58700CE0B4B /* routine.c */,
 				FCAD5344149BF58700CE0B4B /* routine.h */,
 				FCAD5345149BF58700CE0B4B /* server.c */,
@@ -149,22 +143,6 @@
 			);
 			name = migcom;
 			path = migcom.tproj;
-			sourceTree = "<group>";
-		};
-		FCAD5331149BF58700CE0B4B /* i386 */ = {
-			isa = PBXGroup;
-			children = (
-				FCAD5332149BF58700CE0B4B /* mig_machine.h */,
-			);
-			path = i386;
-			sourceTree = "<group>";
-		};
-		FCAD5341149BF58700CE0B4B /* ppc */ = {
-			isa = PBXGroup;
-			children = (
-				FCAD5342149BF58700CE0B4B /* mig_machine.h */,
-			);
-			path = ppc;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -260,6 +238,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = "$(RC_ProjectSourceVersion)";
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
@@ -281,7 +260,6 @@
 				GCC_PREPROCESSOR_DEFINITIONS = "MIG_VERSION=\\\"$(RC_ProjectNameAndSourceVersion)\\\"";
 				INSTALL_PATH = "$(DT_TOOLCHAIN_DIR)/usr/libexec";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				VALID_ARCHS = i386;
 			};
 			name = Release;
 		};
