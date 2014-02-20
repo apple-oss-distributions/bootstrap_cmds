@@ -328,6 +328,17 @@ WriteRequestHead(FILE *file, routine_t *rt)
     fprintf(file, "\tInP->%s = mig_get_reply_port();\n", rt->rtReplyPort->argMsgField);
   
   fprintf(file, "\tInP->Head.msgh_id = %d;\n", rt->rtNumber + SubsystemBase);
+
+
+  if (IsVoucherCodeAllowed && !IsKernelUser && !IsKernelServer) {
+    fprintf(file, "\t\n/* BEGIN VOUCHER CODE */\n\n");
+    fprintf(file, "#ifdef USING_VOUCHERS\n");
+    fprintf(file, "\tif (voucher_mach_msg_set != NULL) {\n");
+    fprintf(file, "\t\tvoucher_mach_msg_set(&InP->Head);\n");
+    fprintf(file, "\t}\n");
+    fprintf(file, "#endif // USING_VOUCHERS\n");
+    fprintf(file, "\t\n/* END VOUCHER CODE */\n");
+  }
 }
 
 /*************************************************************

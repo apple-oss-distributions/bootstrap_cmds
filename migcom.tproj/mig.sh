@@ -111,6 +111,7 @@ do
 	-arch ) arch="$2"; shift; shift;;
 	-maxonstack ) migflags=( "${migflags[@]}" "$1" "$2"); shift; shift;;
 	-split ) migflags=( "${migflags[@]}" "$1" ); shift;;
+	-novouchers ) migflags=( "${migflags[@]}" "$1" ); shift;;
 	-MD ) sawMD=1; cppflags=( "${cppflags[@]}" "$1"); shift;;
 	-cpp) shift; shift;;
 	-cc) C="$2"; shift; shift;;
@@ -136,6 +137,7 @@ do
 	-arch ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift ; shift; continue;;
 	-maxonstack ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-split ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
+	-novouchers ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
 	-MD ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
 	-cpp) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-cc) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;

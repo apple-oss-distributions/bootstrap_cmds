@@ -1309,7 +1309,7 @@ WriteDestroyArg(FILE *file, register argument_t *arg)
     if (IsKernelServer) {
       fprintf(file, "#endif /* __MigKernelSpecificCode */\n");
     }
-    fprintf(file, "\t%s = (vm_offset_t) 0;\n", InArgMsgField(arg, ""));
+    fprintf(file, "\t%s = (void *) 0;\n", InArgMsgField(arg, ""));
     fprintf(file, "\tIn%dP->%s.%s = (mach_msg_size_t) 0;\n", arg->argRequestPos, arg->argMsgField, (RPCPortArray(arg) ? "count" : "size"));
   }
   else {

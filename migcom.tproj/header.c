@@ -72,6 +72,37 @@ WriteIncludes(FILE *file, boolean_t isuser, boolean_t isdef)
     fprintf(file, "#include <mach/message.h>\n");
     fprintf(file, "#include <mach/mig_errors.h>\n");
     fprintf(file, "#include <mach/port.h>\n");
+
+    if (IsVoucherCodeAllowed && !IsKernelUser && !IsKernelServer) {
+      fprintf(file, "\t\n/* BEGIN VOUCHER CODE */\n\n");
+      fprintf(file, "#ifndef KERNEL\n");
+      fprintf(file, "#if defined(__has_include)\n");
+      fprintf(file, "#if __has_include(<mach/mig_voucher_support.h>)\n");
+      fprintf(file, "#ifndef USING_VOUCHERS\n");
+      fprintf(file, "#define USING_VOUCHERS\n");
+      fprintf(file, "#endif\n");
+
+
+      fprintf(file, "#ifndef __VOUCHER_FORWARD_TYPE_DECLS__\n");
+      fprintf(file, "#define __VOUCHER_FORWARD_TYPE_DECLS__\n");
+
+      fprintf(file, "#ifdef __cplusplus\n");
+      fprintf(file, "extern \"C\" {\n");
+      fprintf(file, "#endif\n");
+
+      fprintf(file, "\textern boolean_t voucher_mach_msg_set(mach_msg_header_t *msg) __attribute__((weak_import));\n");
+
+      fprintf(file, "#ifdef __cplusplus\n");
+      fprintf(file, "}\n");
+      fprintf(file, "#endif\n");
+
+      fprintf(file, "#endif // __VOUCHER_FORWARD_TYPE_DECLS__\n");
+      fprintf(file, "#endif // __has_include(<mach/mach_voucher_types.h>)\n");
+      fprintf(file, "#endif // __has_include\n");
+      fprintf(file, "#endif // !KERNEL\n");
+
+      fprintf(file, "\t\n/* END VOUCHER CODE */\n\n");
+    }
     if (ShortCircuit)
       fprintf(file, "#include <mach/rpc.h>\n");
     if (isuser && IsKernelUser) {

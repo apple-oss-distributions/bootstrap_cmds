@@ -65,6 +65,7 @@ extern boolean_t UseSplitHeaders;
 extern boolean_t ShortCircuit;
 extern boolean_t UseRPCTrap;
 extern boolean_t TestRPCTrap;
+extern boolean_t IsVoucherCodeAllowed;
 
 extern boolean_t IsKernelUser;
 extern boolean_t IsKernelServer;

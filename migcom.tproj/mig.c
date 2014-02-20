@@ -161,7 +161,11 @@ parseArgs(int argc,char *argv[])
           break;
 
         case 'n':
-          CheckNDR = TRUE;
+	  if (streql(argv[0], "-novouchers")) {
+            IsVoucherCodeAllowed = FALSE;
+          } else {
+	    CheckNDR = TRUE;
+	  }
           break;
 
         case 'N':
