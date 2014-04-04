@@ -111,12 +111,12 @@ do
 	-arch ) arch="$2"; shift; shift;;
 	-maxonstack ) migflags=( "${migflags[@]}" "$1" "$2"); shift; shift;;
 	-split ) migflags=( "${migflags[@]}" "$1" ); shift;;
-	-MD ) sawMD=1; cppflags="$cppflags $1"; shift;;
+	-MD ) sawMD=1; cppflags=( "${cppflags[@]}" "$1"); shift;;
 	-cpp) shift; shift;;
 	-cc) C="$2"; shift; shift;;
 	-migcom) M="$2"; shift; shift;;
 	-isysroot) sdkRoot=$(realpath "$2"); shift; shift;;
-	-* ) cppflags="$cppflags $1"; shift;;
+	-* ) cppflags=( "${cppflags[@]}" "$1"); shift;;
 	* ) break;;
     esac
 done
@@ -159,7 +159,7 @@ do
     fi
     rm -f "${temp}.c" "${temp}.d"
     (echo '#line 1 '\"${file}\" ; cat "${file}" ) > "${temp}.c"
-    "$C" -E -arch ${arch} ${cppflags} -I "${sourcedir}" "${iSysRootParm[@]}" "${temp}.c" | "$M" "${migflags[@]}"
+    "$C" -E -arch ${arch} "${cppflags[@]}" -I "${sourcedir}" "${iSysRootParm[@]}" "${temp}.c" | "$M" "${migflags[@]}"
     if [ $? -ne 0 ]
     then
       rm -rf "${temp}.c" "${temp}.d" "${WORKTMP}"
