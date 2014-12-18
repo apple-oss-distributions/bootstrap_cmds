@@ -439,7 +439,7 @@ WriteStructDecl(
     if (trailer)
       WriteTrailerDecl(file, trailer_t);
   }
-  fprintf(file, "\t} %s;\n", name);
+  fprintf(file, "\t} %s __attribute__((unused));\n", name);
   fprintf(file, "#ifdef  __MigPackStructs\n#pragma pack()\n#endif\n");
 }
 

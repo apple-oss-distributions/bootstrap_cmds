@@ -2664,7 +2664,7 @@ WriteCheckReply(FILE *file, routine_t *rt)
   fprintf(file, ")\n{\n");
   
   
-  fprintf(file, "\n\ttypedef __Reply__%s_t __Reply;\n", rt->rtName);
+  fprintf(file, "\n\ttypedef __Reply__%s_t __Reply __attribute__((unused));\n", rt->rtName);
   for (i = 1; i <= rt->rtMaxReplyPos; i++)
     fprintf(file, "\t__Reply *Out%dP;\n", i);
   if (!rt->rtSimpleReply)

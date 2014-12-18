@@ -2513,7 +2513,7 @@ WriteRoutine(FILE *file, register routine_t *rt)
   fprintf(file, "{\n");
   WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, "Request", rt->rtSimpleRequest, TRUE, rt->rtServerImpl, FALSE);
   fprintf(file, "\ttypedef __Request__%s_t __Request;\n", rt->rtName);
-  fprintf(file, "\ttypedef __Reply__%s_t Reply;\n\n", rt->rtName);
+  fprintf(file, "\ttypedef __Reply__%s_t Reply __attribute__((unused));\n\n", rt->rtName);
 
   /*
    * Define a Minimal Reply structure to be used in case of errors
