@@ -328,6 +328,7 @@ WriteRequestHead(FILE *file, routine_t *rt)
     fprintf(file, "\tInP->%s = mig_get_reply_port();\n", rt->rtReplyPort->argMsgField);
   
   fprintf(file, "\tInP->Head.msgh_id = %d;\n", rt->rtNumber + SubsystemBase);
+  fprintf(file, "\tInP->Head.msgh_reserved = 0;\n");
 
 
   if (IsVoucherCodeAllowed && !IsKernelUser && !IsKernelServer) {
@@ -1051,7 +1052,17 @@ WritePackArgValueNormal(FILE *file, register argument_t *arg)
        * Save the string length (+ 1 for trailing 0)
        * in the argument`s count field.
        */
-      fprintf(file, "\tInP->%s = mig_strncpy(InP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argMsgField, arg->argVarName, it->itNumber);
+      fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
+      fprintf(file, "\tif (mig_strncpy_zerofill != NULL) {\n");
+      fprintf(file, "\t\tInP->%s = mig_strncpy_zerofill(InP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argMsgField, arg->argVarName, it->itNumber);
+      fprintf(file, "\t} else {\n");
+      fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
+
+      fprintf(file, "\t\tInP->%s = mig_strncpy(InP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argMsgField, arg->argVarName, it->itNumber);
+
+      fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
+      fprintf(file, "\t}\n");
+      fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
     }
     else if (it->itNoOptArray)
       fprintf(file, "\t(void)memcpy((char *) InP->%s, (const char *) %s%s, %d);\n", arg->argMsgField, ref, arg->argVarName, it->itTypeSize);
@@ -1083,11 +1094,11 @@ WritePackArgValueNormal(FILE *file, register argument_t *arg)
   }
   else if (IS_OPTIONAL_NATIVE(it)) {
     fprintf(file, "\tif ((InP->__Present__%s = (%s != %s))) {\n", arg->argMsgField, arg->argVarName, it->itBadValue);
-    WriteCopyType(file, it, "\tInP->%s.__Real__%s", "/* %s%s */ %s%s", arg->argMsgField, arg->argMsgField, ref, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "\tInP->%s.__Real__%s", "/* %s%s */ %s%s", arg->argMsgField, arg->argMsgField, ref, arg->argVarName);
     fprintf(file, "\t}\n");
   }
   else
-    WriteCopyType(file, it, "InP->%s", "/* %s */ %s%s", arg->argMsgField, ref, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "InP->%s", "/* %s */ %s%s", arg->argMsgField, ref, arg->argVarName);
   fprintf(file, "\n");
 }
 
@@ -1610,7 +1621,9 @@ WriteExtractArgValueNormal(FILE *file, register argument_t *arg)
   if (IS_VARIABLE_SIZED_UNTYPED(argType) || argType->itNoOptArray) {
     if (argType->itString) {
       /*
-       * Copy out variable-size C string with mig_strncpy.
+       * Copy out variable-size C string with mig_strncpy, not the zerofill variant.
+       * We don't risk leaking process / kernel memory on this copy-out because
+       * we've already zero-filled the buffer on copy-in.
        */
       fprintf(file, "\t(void) mig_strncpy(%s%s, %s->%s, %d);\n", ref, arg->argVarName, who, arg->argMsgField, argType->itNumber);
     }
@@ -1664,7 +1677,7 @@ WriteExtractArgValueNormal(FILE *file, register argument_t *arg)
     }
   }
   else
-    WriteCopyType(file, argType, "%s%s", "/* %s%s */ %s->%s", ref, arg->argVarName, who, arg->argMsgField);
+    WriteCopyType(file, argType, FALSE, "%s%s", "/* %s%s */ %s->%s", ref, arg->argVarName, who, arg->argMsgField);
   fprintf(file, "\n");
 }
 
@@ -2220,7 +2233,7 @@ WriteShortCircInArgBefore(FILE *file, register argument_t *arg)
           fprintf(file, "\t{   _%sTemp_ = (char *) %s(%d);\n", arg->argVarName, MessAllocRoutine, it->itTypeSize);
           arg->argTempOnStack = FALSE;
         }
-        WriteCopyArg(file, arg, "_%sTemp_", "/* %s */ (char *) %s", arg->argVarName, arg->argVarName);
+        WriteCopyArg(file, arg, TRUE, "_%sTemp_", "/* %s */ (char *) %s", arg->argVarName, arg->argVarName);
         /* Point argument at temp: */
         fprintf(file, "\t    *(char **)&%s%s = _%sTemp_;\n", (arg->argByReferenceUser ? "*" : ""), arg->argVarName, arg->argVarName);
         fprintf(file, "\t}\n");

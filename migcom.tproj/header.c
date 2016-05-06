@@ -103,6 +103,32 @@ WriteIncludes(FILE *file, boolean_t isuser, boolean_t isdef)
 
       fprintf(file, "\t\n/* END VOUCHER CODE */\n\n");
     }
+
+    fprintf(file, "\t\n/* BEGIN MIG_STRNCPY_ZEROFILL CODE */\n\n");
+    fprintf(file, "#if defined(__has_include)\n");
+    fprintf(file, "#if __has_include(<mach/mig_strncpy_zerofill_support.h>)\n");
+    fprintf(file, "#ifndef USING_MIG_STRNCPY_ZEROFILL\n");
+    fprintf(file, "#define USING_MIG_STRNCPY_ZEROFILL\n");
+    fprintf(file, "#endif\n");
+
+    fprintf(file, "#ifndef __MIG_STRNCPY_ZEROFILL_FORWARD_TYPE_DECLS__\n");
+    fprintf(file, "#define __MIG_STRNCPY_ZEROFILL_FORWARD_TYPE_DECLS__\n");
+
+    fprintf(file, "#ifdef __cplusplus\n");
+    fprintf(file, "extern \"C\" {\n");
+    fprintf(file, "#endif\n");
+
+    fprintf(file, "\textern int mig_strncpy_zerofill(char *dest, const char *src, int len) __attribute__((weak_import));\n");
+
+    fprintf(file, "#ifdef __cplusplus\n");
+    fprintf(file, "}\n");
+    fprintf(file, "#endif\n");
+
+    fprintf(file, "#endif /* __MIG_STRNCPY_ZEROFILL_FORWARD_TYPE_DECLS__ */\n");
+    fprintf(file, "#endif /* __has_include(<mach/mig_strncpy_zerofill_support.h>) */\n");
+    fprintf(file, "#endif /* __has_include */\n");
+    fprintf(file, "\t\n/* END MIG_STRNCPY_ZEROFILL CODE */\n\n");
+
     if (ShortCircuit)
       fprintf(file, "#include <mach/rpc.h>\n");
     if (isuser && IsKernelUser) {

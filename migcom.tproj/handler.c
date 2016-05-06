@@ -441,11 +441,11 @@ WriteExtractArgValue(FILE *file,  register argument_t *arg)
   register ipc_type_t *it = arg->argType;
 
   if (arg->argMultiplier > 1)
-    WriteCopyType(file, it, "%s /* %d %s %d */", "/* %s */ In%dP->%s / %d", arg->argVarName, arg->argRequestPos, arg->argMsgField, arg->argMultiplier);
+    WriteCopyType(file, it, FALSE, "%s /* %d %s %d */", "/* %s */ In%dP->%s / %d", arg->argVarName, arg->argRequestPos, arg->argMsgField, arg->argMultiplier);
   else if (it->itInTrans != strNULL)
-    WriteCopyType(file, it, "%s /* %s %d %s */", "/* %s */ %s(In%dP->%s)", arg->argVarName, it->itInTrans, arg->argRequestPos, arg->argMsgField);
+    WriteCopyType(file, it, FALSE, "%s /* %s %d %s */", "/* %s */ %s(In%dP->%s)", arg->argVarName, it->itInTrans, arg->argRequestPos, arg->argMsgField);
   else
-    WriteCopyType(file, it, "%s /* %d %s */", "/* %s */ In%dP->%s", arg->argVarName, arg->argRequestPos, arg->argMsgField);
+    WriteCopyType(file, it, FALSE, "%s /* %d %s */", "/* %s */ In%dP->%s", arg->argVarName, arg->argRequestPos, arg->argMsgField);
   fprintf(file, "\n");
 }
 
@@ -609,18 +609,18 @@ WritePackArgValue(FILE *file, register argument_t *arg)
     fprintf(file, "%d * %s);\n", btype->itTypeSize, count->argVarName);
   }
   else if (arg->argMultiplier > 1)
-    WriteCopyType(file, it, "OutP->%s /* %d %s */", "/* %s */ %d * %s", arg->argMsgField, arg->argMultiplier, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s /* %d %s */", "/* %s */ %d * %s", arg->argMsgField, arg->argMultiplier, arg->argVarName);
   else if (it->itOutTrans != strNULL)
-    WriteCopyType(file, it, "OutP->%s /* %s %s */", "/* %s */ %s(%s)", arg->argMsgField, it->itOutTrans, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s /* %s %s */", "/* %s */ %s(%s)", arg->argMsgField, it->itOutTrans, arg->argVarName);
   else
-    WriteCopyType(file, it, "OutP->%s /* %s */", "/* %s */ %s", arg->argMsgField, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s /* %s */", "/* %s */ %s", arg->argMsgField, arg->argVarName);
 }
 
 static void
 WriteCopyArgValue(FILE *file, argument_t *arg)
 {
   fprintf(file, "\n");
-  WriteCopyType(file, arg->argType, "/* %d */ OutP->%s", "In%dP->%s", arg->argRequestPos, arg->argMsgField);
+  WriteCopyType(file, arg->argType, TRUE, "/* %d */ OutP->%s", "In%dP->%s", arg->argRequestPos, arg->argMsgField);
 }
 
 static void

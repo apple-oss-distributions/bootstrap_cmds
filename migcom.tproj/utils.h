@@ -109,9 +109,9 @@ extern void WriteStructDecl( FILE *file, argument_t *args,
 
 extern void WriteStaticDecl( FILE *file, argument_t *arg );
 
-extern void WriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, ...);
+extern void WriteCopyType(FILE *file, ipc_type_t *it, boolean_t mig_allocated_buf, char *left, char *right, ...);
 
-extern void WriteCopyArg(FILE *file, argument_t *arg, char *left, char *right, ...);
+extern void WriteCopyArg(FILE *file, argument_t *arg, boolean_t mig_allocated_buf, char *left, char *right, ...);
 
 extern void WriteLogMsg( FILE *file, routine_t *rt, int where, int what );
 

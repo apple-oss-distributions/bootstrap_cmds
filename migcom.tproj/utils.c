@@ -697,7 +697,7 @@ SkipVFPrintf(FILE *file, register char *fmt, va_list pvar)
 }
 
 static void
-vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar)
+vWriteCopyType(FILE *file, ipc_type_t *it, boolean_t mig_allocated_buf, char *left, char *right, va_list pvar)
 {
   va_list pvar2;
   va_copy(pvar2, pvar);
@@ -711,11 +711,41 @@ vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar
     fprintf(file, ";\n");
   }
   else if (it->itString) {
+    va_list pvar3, pvar4;
+    va_copy(pvar3, pvar);
+    va_copy(pvar4, pvar);
+
+    if (mig_allocated_buf) {
+	/*
+	 * zero-fill MIG allocated buffers: we control the size so there's
+	 * no risk of buffer overrun, and we avoid leaking process/kernel
+	 * memory on the copy-out
+	 */
+        fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
+        fprintf(file, "\tif (mig_strncpy_zerofill != NULL) {\n");
+        fprintf(file, "\t\t(void) mig_strncpy_zerofill(");
+        (void) SkipVFPrintf(file, left, pvar);
+        fprintf(file, ", ");
+        (void) SkipVFPrintf(file, right, pvar2);
+        fprintf(file, ", %d);\n", it->itTypeSize);
+        fprintf(file, "\t} else {\n");
+        fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n\t");
+    }
     fprintf(file, "\t(void) mig_strncpy(");
-    (void) SkipVFPrintf(file, left, pvar);
+
+    (void) SkipVFPrintf(file, left, pvar3);
     fprintf(file, ", ");
-    (void) SkipVFPrintf(file, right, pvar2);
+    (void) SkipVFPrintf(file, right, pvar4);
     fprintf(file, ", %d);\n", it->itTypeSize);
+
+    if (mig_allocated_buf) {
+        fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
+        fprintf(file, "\t}\n");
+        fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
+    }
+
+    va_end(pvar3);
+    va_end(pvar4);
   }
   else {
     fprintf(file, "\t{   typedef struct { char data[%d]; } *sp;\n", it->itTypeSize);
@@ -733,12 +763,12 @@ vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar
 /*ARGSUSED*/
 /*VARARGS4*/
 void
-WriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, ...)
+WriteCopyType(FILE *file, ipc_type_t *it, boolean_t mig_allocated_buf, char *left, char *right, ...)
 {
   va_list pvar;
   va_start(pvar, right);
   
-  vWriteCopyType(file, it, left, right, pvar);
+  vWriteCopyType(file, it, mig_allocated_buf, left, right, pvar);
   
   va_end(pvar);
 }
@@ -747,7 +777,7 @@ WriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, ...)
 /*ARGSUSED*/
 /*VARARGS4*/
 void
-WriteCopyArg(FILE *file, argument_t *arg, char *left, char *right, ...)
+WriteCopyArg(FILE *file, argument_t *arg, boolean_t mig_allocated_buf, char *left, char *right, ...)
 {
   va_list pvar;
   va_start(pvar, right);
@@ -764,7 +794,7 @@ WriteCopyArg(FILE *file, argument_t *arg, char *left, char *right, ...)
       fprintf(file, ", %s);\n", arg->argCount->argVarName);
     }
     else
-      vWriteCopyType(file, it, left, right, pvar);
+      vWriteCopyType(file, it, mig_allocated_buf, left, right, pvar);
   }
   
   va_end(pvar);

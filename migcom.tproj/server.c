@@ -517,6 +517,7 @@ WriteDispatcher(FILE *file, statement_t *stats)
   fprintf(file, "\tOutHeadP->msgh_size = (mach_msg_size_t)sizeof(mig_reply_error_t);\n");
   fprintf(file, "\tOutHeadP->msgh_local_port = MACH_PORT_NULL;\n");
   fprintf(file, "\tOutHeadP->msgh_id = InHeadP->msgh_id + 100;\n");
+  fprintf(file, "\tOutHeadP->msgh_reserved = 0;\n");
   fprintf(file, "\n");
 
   fprintf(file, "\tif ((InHeadP->msgh_id > %d) || (InHeadP->msgh_id < %d) ||\n", SubsystemBase + rtNumber - 1, SubsystemBase);
@@ -1016,9 +1017,9 @@ WriteExtractArgValue(FILE *file, register argument_t *arg)
 #endif
     recast = "";
   if (it->itInTrans != strNULL)
-    WriteCopyType(file, it, "%s", "/* %s */ %s(%s%s)", arg->argVarName, it->itInTrans, recast, InArgMsgField(arg, ""));
+    WriteCopyType(file, it, FALSE, "%s", "/* %s */ %s(%s%s)", arg->argVarName, it->itInTrans, recast, InArgMsgField(arg, ""));
   else
-    WriteCopyType(file, it, "%s", "/* %s */ %s%s", arg->argVarName, recast, InArgMsgField(arg, ""));
+    WriteCopyType(file, it, FALSE, "%s", "/* %s */ %s%s", arg->argVarName, recast, InArgMsgField(arg, ""));
 
   fprintf(file, "\n");
 }
@@ -1441,7 +1442,14 @@ WriteInitKPD_port(FILE *file, register argument_t *arg)
     if (IsKernelServer)
       fprintf(file, "#endif /* __MigKernelSpecificCode */\n");
   }
+  fprintf(file, "#if !(defined(KERNEL) && defined(__LP64__))\n");
+  fprintf(file, "\t%spad1 = 0;\n", string);
+  fprintf(file, "#endif\n");
+  fprintf(file, "\t%spad2 = 0;\n", string);
   fprintf(file, "\t%stype = MACH_MSG_PORT_DESCRIPTOR;\n", string);
+  fprintf(file, "#if defined(KERNEL)\n");
+  fprintf(file, "\t%spad_end = 0;\n", string);
+  fprintf(file, "#endif\n");
   fprintf(file, "#endif\t/* UseStaticTemplates */\n");
   if (close)
     fprintf(file, "\t    }\n\t}\n");
@@ -1487,7 +1495,11 @@ WriteInitKPD_ool(FILE *file, register argument_t *arg)
 #ifdef ALIGNMENT
   fprintf(file, "\t%salignment = MACH_MSG_ALIGN_%d;\n", string, arg->argMsgField, (howbig < 8) ? 1 : howbig / 8);
 #endif
+  fprintf(file, "\t%spad1 = 0;\n", string);
   fprintf(file, "\t%stype = MACH_MSG_OOL_DESCRIPTOR;\n", string);
+  fprintf(file, "#if defined(KERNEL) && !defined(__LP64__)\n");
+  fprintf(file, "\t%spad_end = 0;\n", string);
+  fprintf(file, "#endif\n");
   fprintf(file, "#endif\t/* UseStaticTemplates */\n");
 
   if (IS_MULTIPLE_KPD(it))
@@ -1919,7 +1931,17 @@ WritePackArgValueNormal(FILE *file, register argument_t *arg)
        * Save the string length (+ 1 for trailing 0)
        * in the argument`s count field.
        */
-      fprintf(file, "\tOutP->%s = mig_strncpy(OutP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argMsgField, arg->argVarName, it->itNumber);
+      fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
+      fprintf(file, "\tif (mig_strncpy_zerofill != NULL) {\n");
+      fprintf(file, "\t\tOutP->%s = mig_strncpy_zerofill(OutP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argMsgField, arg->argVarName, it->itNumber);
+      fprintf(file, "\t} else {\n");
+      fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
+
+      fprintf(file, "\t\tOutP->%s = mig_strncpy(OutP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argMsgField, arg->argVarName, it->itNumber);
+
+      fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
+      fprintf(file, "\t}\n");
+      fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
     }
     else if (it->itNoOptArray)
       fprintf(file, "\t(void)memcpy((char *) OutP->%s, (const char *) %s, %d);\n", arg->argMsgField, arg->argVarName, it->itTypeSize);
@@ -1942,9 +1964,9 @@ WritePackArgValueNormal(FILE *file, register argument_t *arg)
     }
   }
   else if (it->itOutTrans != strNULL)
-    WriteCopyType(file, it, "OutP->%s", "/* %s */ %s(%s)", arg->argMsgField, it->itOutTrans, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s", "/* %s */ %s(%s)", arg->argMsgField, it->itOutTrans, arg->argVarName);
   else
-    WriteCopyType(file, it, "OutP->%s", "/* %s */ %s", arg->argMsgField, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s", "/* %s */ %s", arg->argMsgField, arg->argVarName);
 }
 
 static void
@@ -1979,7 +2001,7 @@ static void
 WriteCopyArgValue(FILE *file, argument_t *arg)
 {
   fprintf(file, "\n");
-  WriteCopyType(file, arg->argType, "/* %d */ OutP->%s", "In%dP->%s", arg->argRequestPos, (arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField);
+  WriteCopyType(file, arg->argType, TRUE, "/* %d */ OutP->%s", "In%dP->%s", arg->argRequestPos, (arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField);
 }
 
 static void
