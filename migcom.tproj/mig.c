@@ -274,8 +274,6 @@ parseArgs(int argc,char *argv[])
               fatal("missing size for -maxonstack option");
             MaxMessSizeOnStack = atoi(argv[0]);
           }
-          else if (streql(argv[0], "-mach_msg2"))
-            UseMachMsg2 = TRUE;
           else
             fatal("unknown flag: '%s'", argv[0]);
           break;
@@ -295,12 +293,6 @@ parseArgs(int argc,char *argv[])
     }
     else
       fatal("bad argument: '%s'", *argv);
-
-  if (UseMachMsg2) {
-    if (!BeAnsiC || UseRPCTrap || CheckNDR) {
-      fatal("KernelServer does not support the given uptions.");
-    }
-  }
 }
 
 FILE *uheader, *server, *user;

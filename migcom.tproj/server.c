@@ -66,16 +66,6 @@ void WriteLogDefines(FILE *file, string_t who);
 void WriteIdentificationString(FILE *file);
 static void WriteFieldDecl(FILE *file, argument_t *arg);
 
-#define InHeadSeg  (UseMachMsg2 ? "InKP" : "In0P")
-#define OutHeadSeg (UseMachMsg2 ? "OutKP" : "OutP")
-
-/* Bear Trap: Certain MIG features are left unimplemented for mach_msg2() KernelServer */
-#define __KernelServer_unreachable() \
-do {\
-  if (UseMachMsg2) \
-    fatal("mach_msg2 KernelServer support for this code block is unimplemented."); \   
-} while (0)
-
 static void
 WriteKPD_Iterator(FILE *file, boolean_t in, boolean_t varying, argument_t *arg, boolean_t bracket)
 {
@@ -90,9 +80,9 @@ WriteKPD_Iterator(FILE *file, boolean_t in, boolean_t varying, argument_t *arg, 
   fprintf(file, ";\n\n");
 
   if (in)
-    sprintf(string, "%s", arg->argInSegment);
+    sprintf(string, "In%dP", arg->argRequestPos);
   else
-    sprintf(string, "%s", arg->argOutSegment);
+    sprintf(string, "OutP");
 
   fprintf(file, "\t    ptr = &%s->%s[0];\n", string, arg->argMsgField);
 
@@ -100,7 +90,7 @@ WriteKPD_Iterator(FILE *file, boolean_t in, boolean_t varying, argument_t *arg, 
     argument_t *count = arg->argCount;
 
     if (in)
-      fprintf(file, "\t    for (i = 0; i < %s->%s; ptr++, i++) %s\n", count->argInSegment, count->argMsgField, (bracket) ? "{" : "");
+      fprintf(file, "\t    for (i = 0; i < In%dP->%s; ptr++, i++) %s\n", count->argRequestPos, count->argMsgField, (bracket) ? "{" : "");
     else {
       fprintf(file, "\t    j = min(%d, ", it->itKPD_Number);
       if (akCheck(count->argKind, akbVarNeeded))
@@ -208,12 +198,7 @@ WriteForwardDeclarations(FILE *file, statement_t *stats)
   for (stat = stats; stat != stNULL; stat = stat->stNext)
     if (stat->stKind == skRoutine) {
       fprintf(file, "\nmig_internal novalue _X%s\n", stat->stRoutine->rtName);
-      if (!UseMachMsg2) {
-        fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP);\n");
-      } else {
-        fprintf(file, "\t(mach_msg_header_t *InHeadP, void *InDataP, mach_msg_max_trailer_t *InTrailerP, "
-          "mach_msg_header_t *OutHeadP, void *OutDataP);\n");
-      }
+      fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP);\n");
     }
   fprintf(file, "\n");
 }
@@ -280,7 +265,6 @@ WriteRoutineEntries(FILE *file, statement_t *stats)
   int arg_count, descr_count;
   int offset = 0;
   size_t serverSubsysNameLen = strlen(ServerSubsys);
-  char *kern_ = UseMachMsg2 ? "kern_" : "";
 
   fprintf(file, "\t{\n");
   for (stat = stats; stat != stNULL; stat = stat->stNext)
@@ -302,20 +286,12 @@ WriteRoutineEntries(FILE *file, statement_t *stats)
         sprintf(sig_array, "&%s.arg_descriptor[%d], (mach_msg_size_t)sizeof(__Reply__%s_t)", ServerSubsys, offset, rt->rtName);
       }
       else {
-        if (!UseMachMsg2) {
-          sprintf(sig_array, "(routine_arg_descriptor_t)0, (mach_msg_size_t)sizeof(__Reply__%s_t)", rt->rtName);
-        } else {
-          sprintf(sig_array, "%d, (mach_msg_size_t)sizeof(__Reply__%s_t)", rt->rtReplyKPDs, rt->rtName);
-        }
+        sprintf(sig_array, "(routine_arg_descriptor_t)0, (mach_msg_size_t)sizeof(__Reply__%s_t)", rt->rtName);
       }
       sprintf(rt_name, "_X%s", rt->rtName);
       descr_count = rtCountArgDescriptors(rt->rtArgs, &arg_count);
       offset += descr_count;
-
-      fprintf(file, "          { (mig_impl_routine_t) 0,\n\
-          (mig_stub_%sroutine_t) %s, ", kern_, rt_name);
-      fprintf(file, "%d, %d, %s}", arg_count, (UseRPCTrap) ? descr_count : 0, sig_array);
-
+      WriteRPCRoutineDescriptor(file, rt, arg_count, (UseRPCTrap) ? descr_count : 0, rt_name, sig_array);
       fprintf(file, ",\n");
       free(sig_array);
       free(rt_name);
@@ -352,15 +328,6 @@ WriteSubsystem(FILE *file, statement_t *stats)
 {
   statement_t *stat;
   int descr_count = 0;
-  char *kern_ = "";
-  char *k = "";
-  char *kernel = "";
-
-  if (UseMachMsg2) {
-    kern_ = "kern_";
-    k = "k";
-    kernel = "kernel ";
-  }
 
   for (stat = stats; stat != stNULL; stat = stat->stNext)
     if (stat->stKind == skRoutine) {
@@ -373,32 +340,25 @@ WriteSubsystem(FILE *file, statement_t *stats)
     fprintf(file, "boolean_t %s(", ServerDemux);
     if (BeAnsiC) {
       fprintf(file, "\n\t\tmach_msg_header_t *InHeadP,");
-      if (!UseMachMsg2) {
-        fprintf(file, "\n\t\tmach_msg_header_t *OutHeadP");
-      } else {
-        fprintf(file, "\n\t\tvoid *InDataP,");
-        fprintf(file, "\n\t\tmach_msg_header_t *OutHeadP,");
-        fprintf(file, "\n\t\tvoid *OutDataP");
-      }
+      fprintf(file, "\n\t\tmach_msg_header_t *OutHeadP");
     }
     fprintf(file, ");\n\n");
 
     WriteMigExternal(file);
-    fprintf(file, "mig_%sroutine_t %s_routine(", kern_, ServerDemux);
+    fprintf(file, "mig_routine_t %s_routine(", ServerDemux);
     if (BeAnsiC) {
       fprintf(file, "\n\t\tmach_msg_header_t *InHeadP");
     }
     fprintf(file, ");\n\n");
   }
-  fprintf(file, "\n/* Description of this %ssubsystem, for use in direct RPC */\n", kernel);
+  fprintf(file, "\n/* Description of this subsystem, for use in direct RPC */\n");
   if (ServerHeaderFileName == strNULL) {
     fprintf(file, "const struct %s {\n", ServerSubsys);
     if (UseRPCTrap) {
-      __KernelServer_unreachable();
       fprintf(file, "\tstruct subsystem *\tsubsystem;\t/* Reserved for system use */\n");
     }
     else {
-      fprintf(file, "\tmig_%sserver_routine_t \t%sserver;\t/* Server routine */\n", kern_, k);
+      fprintf(file, "\tmig_server_routine_t \tserver;\t/* Server routine */\n");
     }
     fprintf(file, "\tmach_msg_id_t\tstart;\t/* Min routine number */\n");
     fprintf(file, "\tmach_msg_id_t\tend;\t/* Max routine number + 1 */\n");
@@ -409,9 +369,9 @@ WriteSubsystem(FILE *file, statement_t *stats)
     }
     else {
       fprintf(file, "\tvm_address_t\treserved;\t/* Reserved */\n");
-      fprintf(file, "\tstruct %sroutine_descriptor\t/* Array of routine descriptors */\n", kern_);
+      fprintf(file, "\tstruct routine_descriptor\t/* Array of routine descriptors */\n");
     }
-    fprintf(file, "\t\t%sroutine[%d];\n", k, rtNumber);
+    fprintf(file, "\t\troutine[%d];\n", rtNumber);
     if (UseRPCTrap) {
       fprintf(file, "\tstruct rpc_routine_arg_descriptor\t/*Array of arg descriptors */\n");
       fprintf(file, "\t\targ_descriptor[%d];\n", descr_count);
@@ -515,14 +475,6 @@ WriteServerReplyUnion(FILE *file, statement_t *stats)
 static void
 WriteDispatcher(FILE *file, statement_t *stats)
 {
-  char *k = "";
-  char *kern_ = "";
-
-  if (UseMachMsg2) {
-    k = "k";
-    kern_ = "kern_";
-  }
-
   /*
    * Write the subsystem stuff.
    */
@@ -534,15 +486,9 @@ WriteDispatcher(FILE *file, statement_t *stats)
    */
   fprintf(file, "mig_external boolean_t %s\n", ServerDemux);
   if (BeAnsiC) {
-    if (!UseMachMsg2) {
-      fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP)\n");
-    } else {
-      fprintf(file, "\t(mach_msg_header_t *InHeadP, void *InDataP, mach_msg_max_trailer_t *InTrailerP,"
-        " mach_msg_header_t *OutHeadP, void *OutDataP)\n");
-    }
+    fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP)\n");
   }
   else {
-    __KernelServer_unreachable();
     fprintf(file, "#if\t%s\n", NewCDecl);
     fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP)\n");
     fprintf(file, "#else\n");
@@ -561,7 +507,7 @@ WriteDispatcher(FILE *file, statement_t *stats)
   fprintf(file, "\t */\n");
   fprintf(file, "\n");
 
-  fprintf(file, "\tmig_%sroutine_t routine;\n", kern_);
+  fprintf(file, "\tmig_routine_t routine;\n");
   fprintf(file, "\n");
 
   fprintf(file, "\tOutHeadP->msgh_bits = ");
@@ -575,7 +521,7 @@ WriteDispatcher(FILE *file, statement_t *stats)
   fprintf(file, "\n");
 
   fprintf(file, "\tif ((InHeadP->msgh_id > %d) || (InHeadP->msgh_id < %d) ||\n", SubsystemBase + rtNumber - 1, SubsystemBase);
-  fprintf(file, "\t    ((routine = %s.%sroutine[InHeadP->msgh_id - %d].%sstub_routine) == 0)) {\n", ServerSubsys, k, SubsystemBase, k);
+  fprintf(file, "\t    ((routine = %s.routine[InHeadP->msgh_id - %d].stub_routine) == 0)) {\n", ServerSubsys, SubsystemBase);
   fprintf(file, "\t\t((mig_reply_error_t *)OutHeadP)->NDR = NDR_record;\n");
   fprintf(file, "\t\t((mig_reply_error_t *)OutHeadP)->RetCode = MIG_BAD_ID;\n");
   if (UseEventLogger) {
@@ -588,11 +534,7 @@ WriteDispatcher(FILE *file, statement_t *stats)
   fprintf(file, "\t}\n");
 
   /* Call appropriate routine */
-  if (!UseMachMsg2)
-    fprintf(file, "\t(*routine) (InHeadP, OutHeadP);\n");
-  else
-    fprintf(file, "\t(*routine) (InHeadP, InDataP, InTrailerP, OutHeadP, OutDataP);\n");
-
+  fprintf(file, "\t(*routine) (InHeadP, OutHeadP);\n");
   fprintf(file, "\treturn TRUE;\n");
   fprintf(file, "}\n");
   fprintf(file, "\n");
@@ -600,7 +542,7 @@ WriteDispatcher(FILE *file, statement_t *stats)
   /*
    * Then, the <subsystem>_server_routine routine
    */
-  fprintf(file, "mig_external mig_%sroutine_t %s_routine\n", kern_, ServerDemux);
+  fprintf(file, "mig_external mig_routine_t %s_routine\n", ServerDemux);
   if (BeAnsiC) {
     fprintf(file, "\t(mach_msg_header_t *InHeadP)\n");
   }
@@ -621,7 +563,7 @@ WriteDispatcher(FILE *file, statement_t *stats)
   fprintf(file, "\tif ((msgh_id > %d) || (msgh_id < 0))\n", rtNumber - 1);
   fprintf(file, "\t\treturn 0;\n");
   fprintf(file, "\n");
-  fprintf(file, "\treturn %s.%sroutine[msgh_id].%sstub_routine;\n", ServerSubsys, k, k);
+  fprintf(file, "\treturn %s.routine[msgh_id].stub_routine;\n", ServerSubsys);
   fprintf(file, "}\n");
 
   /* symtab */
@@ -693,20 +635,10 @@ WriteVarDecls(FILE *file, routine_t *rt)
 {
   int i;
 
-  if (!UseMachMsg2) {
-    fprintf(file, "\tRequest *In0P = (Request *) InHeadP;\n");
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, "\tRequest *In%dP;\n", i);
-    fprintf(file, "\tReply *OutP = (Reply *) OutHeadP;\n");
-  } else {
-    fprintf(file, "\tRequestK *InKP = (RequestK *) InHeadP;\n");
-    fprintf(file, "\tRequestU *In0UP = (RequestU *) InDataP;\n");
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, "\tRequestU *In%dUP;\n", i);
-    fprintf(file, "\tReplyK *OutKP = (ReplyK *) OutHeadP;\n");
-    fprintf(file, "\tReplyU *OutUP = (ReplyU *) OutDataP;\n");
-    fprintf(file, "\t(void)OutUP;\n");
-  }
+  fprintf(file, "\tRequest *In0P = (Request *) InHeadP;\n");
+  for (i = 1; i <= rt->rtMaxRequestPos; i++)
+    fprintf(file, "\tRequest *In%dP;\n", i);
+  fprintf(file, "\tReply *OutP = (Reply *) OutHeadP;\n");
 
   /* if reply is variable, we may need msgh_size_delta and msgh_size */
   if (rt->rtNumReplyVar > 1)
@@ -732,28 +664,28 @@ static void
 WriteReplyInit(FILE *file, routine_t *rt)
 {
   fprintf(file, "\n");
-  if (!UseMachMsg2 && (rt->rtNumReplyVar > 1 || rt->rtMaxReplyPos))
+  if  (rt->rtNumReplyVar > 1 || rt->rtMaxReplyPos)
     /* WritheAdjustMsgSize() has been executed at least once! */
     fprintf(file, "\tOutP = (Reply *) OutHeadP;\n");
 
   if (!rt->rtSimpleReply)  /* complex reply message */
-    fprintf(file, "\t%s->Head.msgh_bits |= MACH_MSGH_BITS_COMPLEX;\n", OutHeadSeg);
+    fprintf(file, "\tOutP->Head.msgh_bits |= MACH_MSGH_BITS_COMPLEX;\n");
 
   if (rt->rtNumReplyVar == 0) {
-    fprintf(file, "\t%s->Head.msgh_size = ", OutHeadSeg);
+    fprintf(file, "\tOutP->Head.msgh_size = ");
     rtMinReplySize(file, rt, "Reply");
     fprintf(file, ";\n");
   }
   else if (rt->rtNumReplyVar > 1)
-    fprintf(file, "\t%s->Head.msgh_size = msgh_size;\n", OutHeadSeg);
+    fprintf(file, "\tOutP->Head.msgh_size = msgh_size;\n");
   /* the case rt->rtNumReplyVar = 1 is taken care of in WriteAdjustMsgSize() */
 }
 
 static void
 WriteRetCArgCheckError(FILE *file, routine_t *rt)
 {
-  fprintf(file, "\tif (!(%s->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) &&\n", InHeadSeg);
-  fprintf(file, "\t    (%s->Head.msgh_size == (mach_msg_size_t)sizeof(mig_reply_error_t)))\n", InHeadSeg);
+  fprintf(file, "\tif (!(In0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) &&\n");
+  fprintf(file, "\t    (In0P->Head.msgh_size == (mach_msg_size_t)sizeof(mig_reply_error_t)))\n");
   fprintf(file, "\t{\n");
 }
 
@@ -772,18 +704,18 @@ WriteCheckHead(FILE *file, routine_t *rt)
 {
   fprintf(file, "#if\t__MigTypeCheck\n");
   if (rt->rtNumRequestVar > 0)
-    fprintf(file, "\tmsgh_size = %s->Head.msgh_size;\n", InHeadSeg);
+    fprintf(file, "\tmsgh_size = In0P->Head.msgh_size;\n");
 
   if (rt->rtSimpleRequest) {
     /* Expecting a simple message. */
-    fprintf(file, "\tif ((%s->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n", InHeadSeg);
+    fprintf(file, "\tif ((In0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n");
     if (rt->rtNumRequestVar > 0) {
       fprintf(file, "\t    (msgh_size < ");
       rtMinRequestSize(file, rt, "__Request");
       fprintf(file, ") ||  (msgh_size > (mach_msg_size_t)sizeof(__Request)))\n");
     }
     else
-      fprintf(file, "\t    (%s->Head.msgh_size != (mach_msg_size_t)sizeof(__Request)))\n", InHeadSeg);
+      fprintf(file, "\t    (In0P->Head.msgh_size != (mach_msg_size_t)sizeof(__Request)))\n");
   }
   else {
     /* Expecting a complex message. */
@@ -791,22 +723,22 @@ WriteCheckHead(FILE *file, routine_t *rt)
     fprintf(file, "\tif (");
     if (rt->rtRetCArg != argNULL)
       fprintf(file, "(");
-    fprintf(file, "!(%s->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n", InHeadSeg);
-    fprintf(file, "\t    (%s->msgh_body.msgh_descriptor_count != %d) ||\n", InHeadSeg, rt->rtRequestKPDs);
+    fprintf(file, "!(In0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n");
+    fprintf(file, "\t    (In0P->msgh_body.msgh_descriptor_count != %d) ||\n", rt->rtRequestKPDs);
     if (rt->rtNumRequestVar > 0) {
       fprintf(file, "\t    (msgh_size < ");
       rtMinRequestSize(file, rt, "__Request");
       fprintf(file, ") ||  (msgh_size > (mach_msg_size_t)sizeof(__Request))");
     }
     else
-      fprintf(file, "\t    (%s->Head.msgh_size != (mach_msg_size_t)sizeof(__Request))", InHeadSeg);
+      fprintf(file, "\t    (In0P->Head.msgh_size != (mach_msg_size_t)sizeof(__Request))");
     if (rt->rtRetCArg == argNULL)
       fprintf(file, ")\n");
     else {
       fprintf(file, ") &&\n");
-      fprintf(file, "\t    ((%s->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n", InHeadSeg);
-      fprintf(file, "\t    %s->Head.msgh_size != (mach_msg_size_t)sizeof(mig_reply_error_t) ||\n", InHeadSeg);
-      fprintf(file, "\t    ((mig_reply_error_t *)%s)->RetCode == KERN_SUCCESS))\n", InHeadSeg);
+      fprintf(file, "\t    ((In0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n");
+      fprintf(file, "\t    In0P->Head.msgh_size != (mach_msg_size_t)sizeof(mig_reply_error_t) ||\n");
+      fprintf(file, "\t    ((mig_reply_error_t *)In0P)->RetCode == KERN_SUCCESS))\n");
     }
   }
   fprintf(file, "\t\treturn MIG_BAD_ARGUMENTS;\n");
@@ -900,12 +832,10 @@ void
 WriteRequestNDRConvertIntRepOneArgUse(FILE *file, argument_t *arg)
 {
   routine_t *rt = arg->argRoutine;
-  char *where = UseMachMsg2 ? "UP" : "P";
 
   fprintf(file, "#if defined(__NDR_convert__int_rep__Request__%s_t__%s__defined)\n", rt->rtName, arg->argMsgField);
-  fprintf(file, "\tif (In0%s->NDR.int_rep != NDR_record.int_rep)\n", where);
-  fprintf(file, "\t\t__NDR_convert__int_rep__Request__%s_t__%s(&%s->%s, %s->NDR.int_rep);\n", rt->rtName,
-    arg->argMsgField, arg->argInSegment, arg->argMsgField, arg->argInSegment);
+  fprintf(file, "\tif (In0P->NDR.int_rep != NDR_record.int_rep)\n");
+  fprintf(file, "\t\t__NDR_convert__int_rep__Request__%s_t__%s(&In%dP->%s, In%dP->NDR.int_rep);\n", rt->rtName, arg->argMsgField, arg->argRequestPos, arg->argMsgField, arg->argRequestPos);
   fprintf(file, "#endif\t/* __NDR_convert__int_rep__Request__%s_t__%s__defined */\n", rt->rtName, arg->argMsgField);
 }
 
@@ -940,7 +870,7 @@ WriteCalcArgSize(FILE *file, argument_t *arg)
   }
 
   if (IS_OPTIONAL_NATIVE(ptype))
-    fprintf(file, "(%s->__Present__%s ? _WALIGNSZ_(%s) : 0)" , arg->argInSegment, arg->argMsgField, ptype->itServerType);
+    fprintf(file, "(In%dP->__Present__%s ? _WALIGNSZ_(%s) : 0)" , arg->argRequestPos, arg->argMsgField, ptype->itServerType);
   else {
     ipc_type_t *btype = ptype->itElement;
     argument_t *count = arg->argCount;
@@ -952,7 +882,7 @@ WriteCalcArgSize(FILE *file, argument_t *arg)
 
     if (multiplier > 1)
       fprintf(file, "%d * ", multiplier);
-    fprintf(file, "%s->%s", count->argInSegment, count->argMsgField);
+    fprintf(file, "In%dP->%s", count->argRequestPos, count->argMsgField);
     fprintf(file, ")");
   }
 }
@@ -969,7 +899,7 @@ WriteCheckArgSize(FILE *file, routine_t *rt, argument_t *arg, const char *compar
   if (PackMsg == FALSE) {
 	  fprintf(file, "%s %d)", comparator, ptype->itTypeSize + ptype->itPadSize);
   } else if (IS_OPTIONAL_NATIVE(ptype)) {
-	  fprintf(file, "%s (%s->__Present__%s ? _WALIGNSZ_(%s) : 0))" , comparator, arg->argInSegment, arg->argMsgField, ptype->itServerType);
+	  fprintf(file, "%s (In%dP->__Present__%s ? _WALIGNSZ_(%s) : 0))" , comparator, arg->argRequestPos, arg->argMsgField, ptype->itServerType);
   } else {
     ipc_type_t *btype = ptype->itElement;
     argument_t *count = arg->argCount;
@@ -977,7 +907,7 @@ WriteCheckArgSize(FILE *file, routine_t *rt, argument_t *arg, const char *compar
 
     if (multiplier > 1)
       fprintf(file, "/ %d ", multiplier);
-    fprintf(file, "< %s->%s) ||\n", count->argInSegment, count->argMsgField);
+    fprintf(file, "< In%dP->%s) ||\n", count->argRequestPos, count->argMsgField);
     fprintf(file, "\t    (msgh_size %s ", comparator);
     rtMinRequestSize(file, rt, "__Request");
     fprintf(file, " + ");
@@ -1000,7 +930,7 @@ WriteCheckMsgSize(FILE *file, argument_t *arg)
     fprintf(file, "#if\t__MigTypeCheck\n");
 
     /* verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
-    fprintf(file, "\t" "if (%s->%s > %d)\n", arg->argCount->argInSegment,
+    fprintf(file, "\t" "if ( In%dP->%s > %d )\n", arg->argCount->argRequestPos,
 	    arg->argCount->argMsgField, it->itNumber/btype->itNumber);
     fputs("\t\t" "return MIG_BAD_ARGUMENTS;\n", file);
     /* ...end... */
@@ -1028,8 +958,8 @@ WriteCheckMsgSize(FILE *file, argument_t *arg)
     fprintf(file, "#if\t__MigTypeCheck\n");
 
     /* verify that the user-code-provided count does not exceed the maximum count allowed by the type. */
-    fprintf(file, "\t" "if (%s->%s > %d)\n", arg->argCount->argInSegment,
-	    arg->argCount->argMsgField, it->itNumber/btype->itNumber);
+    fprintf(file, "\t" "if ( In%dP->%s > %d )\n", arg->argCount->argRequestPos,
+	  arg->argCount->argMsgField, it->itNumber/btype->itNumber);
     fputs("\t\t" "return MIG_BAD_ARGUMENTS;\n", file);
     /* ...end... */
 
@@ -1061,7 +991,7 @@ InArgMsgField(argument_t *arg,  char *str)
     if (akCheck(arg->argKind, akbServerImplicit))
       sprintf(who, "TrailerP->");
     else
-      sprintf(who, "%s->", arg->argInSegment);
+      sprintf(who, "In%dP->", arg->argRequestPos);
   }
 
 #ifdef MIG_KERNEL_PORT_CONVERSION
@@ -1145,7 +1075,7 @@ WriteExtractKPD_oolport(FILE *file, argument_t *arg)
     argument_t *poly = arg->argPoly;
     char *pref = poly->argByReferenceServer ? "*" : "";
 
-    fprintf(file, "\t%s%s = %s->%s[0].disposition;\n", pref, poly->argVarName, arg->argInSegment, arg->argMsgField);
+    fprintf(file, "\t%s%s = In%dP->%s[0].disposition;\n", pref, poly->argVarName, arg->argRequestPos, arg->argMsgField);
   }
 }
 
@@ -1155,7 +1085,7 @@ WriteInitializeCount(FILE *file, argument_t *arg)
 {
   ipc_type_t *ptype = arg->argParent->argType;
   ipc_type_t *btype = ptype->itElement;
-  char newstr[MAX_STR_LEN];
+  identifier_t newstr;
 
   /*
    * Initialize 'count' argument for variable-length inline OUT parameter
@@ -1163,9 +1093,9 @@ WriteInitializeCount(FILE *file, argument_t *arg)
    */
 
   if (akCheck(arg->argKind, akbVarNeeded))
-    sprintf(newstr, "%s", arg->argMsgField);
+    newstr = arg->argMsgField;
   else
-    sprintf(newstr, "%s->%s", arg->argOutSegment, arg->argMsgField);
+    newstr = (identifier_t)strconcat("OutP->", arg->argMsgField);
 
   fprintf(file, "\t%s = ", newstr);
   if (IS_MULTIPLE_KPD(ptype))
@@ -1193,17 +1123,13 @@ static void
 WriteAdjustRequestMsgPtr(FILE *file, argument_t *arg)
 {
   ipc_type_t *ptype = arg->argType;
-  char *where = UseMachMsg2 ? "UP" : "P";
-  char *castType = UseMachMsg2 ? "__RequestU" : "__Request";
 
   if (PackMsg == FALSE) {
-    fprintf(file, "\t*In%d%sP = In%d%s = (%s *) ((pointer_t) %s);\n\n",
-      arg->argRequestPos+1, where, arg->argRequestPos+1, where, castType, arg->argInSegment);
+    fprintf(file, "\t*In%dPP = In%dP = (__Request *) ((pointer_t) In%dP);\n\n", arg->argRequestPos+1, arg->argRequestPos+1, arg->argRequestPos);
     return;
   }
 
-  fprintf(file, "\t*In%d%sP = In%d%s = (%s *) ((pointer_t) %s + msgh_size_delta - ",
-    arg->argRequestPos+1, where, arg->argRequestPos+1, where, castType, arg->argInSegment);
+  fprintf(file, "\t*In%dPP = In%dP = (__Request *) ((pointer_t) In%dP + msgh_size_delta - ", arg->argRequestPos+1, arg->argRequestPos+1, arg->argRequestPos);
   if (IS_OPTIONAL_NATIVE(ptype))
     fprintf(file, "_WALIGNSZ_(%s)", ptype->itUserType);
   else
@@ -1327,19 +1253,19 @@ WriteServerCallArg(FILE *file, argument_t *arg)
   else if (akCheckAll(arg->argKind, akbReturnSnd|akbReturnKPD)) {
     if (!it->itInLine)
       /* recast the void *, although it is not necessary */
-      fprintf(file, "(%s%s)%s(%s->%s)", it->itTransType, star, at, arg->argOutSegment, msgfield);
+      fprintf(file, "(%s%s)%s(OutP->%s)", it->itTransType, star, at, msgfield);
     else
 #ifdef MIG_KERNEL_PORT_CONVERSION
       if (IsKernelServer && streql(it->itServerType, "ipc_port_t"))
       /* recast the port to the kernel internal form value */
-        fprintf(file, "(mach_port_t%s)%s(%s->%s)", star, at, arg->argOutSegment, msgfield);
+        fprintf(file, "(mach_port_t%s)%s(OutP->%s)", star, at, msgfield);
       else
 #endif
-        fprintf(file, "%s%s->%s", at, arg->argOutSegment, msgfield);
+        fprintf(file, "%sOutP->%s", at, msgfield);
 
   }
   else  if (akCheck(arg->argKind, akbReturnSnd))
-    fprintf(file, "%s%s->%s", at, arg->argOutSegment, msgfield);
+    fprintf(file, "%sOutP->%s", at, msgfield);
 
   if (NeedClose)
     fprintf(file, ")");
@@ -1368,10 +1294,9 @@ WriteConditionalCallArg(FILE *file, argument_t *arg)
     if (akIdent(arg->argKind) == akeRequestPort ||
         akCheck(arg->argKind, akbServerImplicit))
       fprintf(file, "%s", InArgMsgField(arg, ""));
-    else if (akIdent(arg->argKind) == akeRetCode) {
-      assert(arg->argRequestPos == 0);
-      fprintf(file, "((mig_reply_error_t *)%s)->RetCode", arg->argInSegment);
-    } else
+    else if (akIdent(arg->argKind) == akeRetCode)
+      fprintf(file, "((mig_reply_error_t *)In0P)->RetCode");
+    else
       fprintf(file, "(%s)(0)", it->itTransType);
   }
 
@@ -1442,8 +1367,7 @@ WriteDestroyArg(FILE *file, argument_t *arg)
       fprintf(file, "#endif /* __MigKernelSpecificCode */\n");
     }
     fprintf(file, "\t%s = (void *) 0;\n", InArgMsgField(arg, ""));
-    fprintf(file, "\t%s->%s.%s = (mach_msg_size_t) 0;\n", arg->argInSegment,
-      arg->argMsgField, (RPCPortArray(arg) ? "count" : "size"));
+    fprintf(file, "\tIn%dP->%s.%s = (mach_msg_size_t) 0;\n", arg->argRequestPos, arg->argMsgField, (RPCPortArray(arg) ? "count" : "size"));
   }
   else {
     if (akCheck(arg->argKind, akbVarNeeded))
@@ -1470,7 +1394,9 @@ WriteDestroyPortArg(FILE *file, argument_t *arg)
    */
   if ((it->itInTrans != strNULL) &&
       (it->itOutName == MACH_MSG_TYPE_PORT_SEND)) {
-    fprintf(file, "\tipc_port_release_send((ipc_port_t)%s);\n", InArgMsgField(arg, ""));
+    fprintf(file, "\n");
+    fprintf(file, "\tif (IP_VALID((ipc_port_t)%s))\n", InArgMsgField(arg, ""));
+    fprintf(file, "\t\tipc_port_release_send((ipc_port_t)%s);\n", InArgMsgField(arg, ""));
   }
 }
 
@@ -1500,7 +1426,7 @@ WriteServerCall(FILE *file, routine_t *rt,  void (*func)(FILE *, argument_t *))
   if (akCheck(arg->argKind, akbVarNeeded))
     fprintf(file, "%s = ", arg->argMsgField);
   else
-    fprintf(file, "%s->%s = ", arg->argOutSegment, arg->argMsgField);
+    fprintf(file, "OutP->%s = ", arg->argMsgField);
   if (it->itOutTrans != strNULL) {
     fprintf(file, "%s(", it->itOutTrans);
     NeedClose = TRUE;
@@ -1521,9 +1447,9 @@ WriteCheckReturnValue(FILE *file, routine_t *rt)
   if (akCheck(arg->argKind, akbVarNeeded))
     sprintf(string, "%s", arg->argMsgField);
   else
-    sprintf(string, "%s->%s", arg->argOutSegment, arg->argMsgField);
+    sprintf(string, "OutP->%s", arg->argMsgField);
   fprintf(file, "\tif (%s != KERN_SUCCESS) {\n", string);
-  fprintf(file, "\t\tMIG_RETURN_ERROR(%s, %s);\n", OutHeadSeg, string);
+  fprintf(file, "\t\tMIG_RETURN_ERROR(OutP, %s);\n", string);
   fprintf(file, "\t}\n");
 }
 
@@ -1553,8 +1479,8 @@ WriteInitKPD_port(FILE *file, argument_t *arg)
     close = TRUE;
   }
   else {
-    (void)sprintf(firststring, "%s->%s", arg->argOutSegment, arg->argMsgField);
-    (void)sprintf(string, "%s->%s.", arg->argOutSegment, arg->argMsgField);
+    (void)sprintf(firststring, "OutP->%s", arg->argMsgField);
+    (void)sprintf(string, "OutP->%s.", arg->argMsgField);
   }
 
   fprintf(file, "#if\tUseStaticTemplates\n");
@@ -1607,8 +1533,8 @@ WriteInitKPD_ool(FILE *file, argument_t *arg)
     howbig = it->itElement->itSize;
   }
   else {
-    (void)sprintf(firststring, "%s->%s", arg->argOutSegment, arg->argMsgField);
-    (void)sprintf(string, "%s->%s.", arg->argOutSegment, arg->argMsgField);
+    (void)sprintf(firststring, "OutP->%s", arg->argMsgField);
+    (void)sprintf(string, "OutP->%s.", arg->argMsgField);
     VarArray = it->itVarArray;
     howmany = it->itNumber;
     howbig = it->itSize;
@@ -1659,8 +1585,8 @@ WriteInitKPD_oolport(FILE *file, argument_t *arg)
     howit = it->itElement;
   }
   else {
-    (void)sprintf(firststring, "%s->%s", arg->argOutSegment, arg->argMsgField);
-    (void)sprintf(string, "%s->%s.", arg->argOutSegment, arg->argMsgField);
+    (void)sprintf(firststring, "OutP->%s", arg->argMsgField);
+    (void)sprintf(string, "OutP->%s.", arg->argMsgField);
     VarArray = it->itVarArray;
     howmany = it->itNumber;
     howit = it;
@@ -1719,11 +1645,10 @@ WriteAdjustMsgCircular(FILE *file, argument_t *arg)
    *  array of ports. So do I ...
    */
 
-  fprintf(file, "\t  if (IP_VALID((ipc_port_t) %s->Head.msgh_reply_port) &&\n", InHeadSeg);
-  fprintf(file, "\t    IP_VALID((ipc_port_t) %s->%s.name) &&\n", arg->argOutSegment, arg->argMsgField);
-  fprintf(file, "\t    ipc_port_check_circularity((ipc_port_t) %s->%s.name, (ipc_port_t) %s->Head.msgh_reply_port))\n",
-    arg->argOutSegment, arg->argMsgField, InHeadSeg);
-  fprintf(file, "\t\t%s->Head.msgh_bits |= MACH_MSGH_BITS_CIRCULAR;\n", OutHeadSeg);
+  fprintf(file, "\t  if (IP_VALID((ipc_port_t) In0P->Head.msgh_reply_port) &&\n");
+  fprintf(file, "\t    IP_VALID((ipc_port_t) OutP->%s.name) &&\n", arg->argMsgField);
+  fprintf(file, "\t    ipc_port_check_circularity((ipc_port_t) OutP->%s.name, (ipc_port_t) In0P->Head.msgh_reply_port))\n", arg->argMsgField);
+  fprintf(file, "\t\tOutP->Head.msgh_bits |= MACH_MSGH_BITS_CIRCULAR;\n");
   fprintf(file, "#endif /* __MigKernelSpecificCode */\n");
 }
 
@@ -1749,7 +1674,7 @@ WriteKPD_port(FILE *file, argument_t *arg)
       real_it = it->itElement;
     }
     else {
-      (void)sprintf(string, "%s->%s.", arg->argOutSegment, arg->argMsgField);
+      (void)sprintf(string, "OutP->%s.", arg->argMsgField);
       real_it = it;
     }
 #ifdef MIG_KERNEL_PORT_CONVERSIONS
@@ -1767,14 +1692,14 @@ WriteKPD_port(FILE *file, argument_t *arg)
       if  (akCheck(arg->argPoly->argKind, akbVarNeeded))
         fprintf(file, "\t%sdisposition = %s;\n", string, poly->argVarName);
       else if (close)
-        fprintf(file, "\t%sdisposition = %s->%s;\n", string, poly->argOutSegment, poly->argSuffix);
+        fprintf(file, "\t%sdisposition = OutP->%s;\n", string, poly->argSuffix);
     }
     if (close)
       fprintf(file, "\t    }\n\t}\n");
     fprintf(file, "\n");
   }
   else  if (arg->argPoly != argNULL && akCheckAll(arg->argPoly->argKind, akbReturnSnd|akbVarNeeded))
-    fprintf(file, "\t%s->%s.disposition = %s;\n", arg->argOutSegment, arg->argMsgField, arg->argPoly->argVarName);
+    fprintf(file, "\tOutP->%s.disposition = %s;\n", arg->argMsgField, arg->argPoly->argVarName);
   /*
    * If this is a KernelServer, and the reply message contains
    * a receive right, we must check for the possibility of a
@@ -1810,7 +1735,7 @@ WriteKPD_ool(FILE *file, argument_t *arg)
     subindex = "[i]";
   }
   else {
-    (void)sprintf(string, "%s->%s.", arg->argOutSegment, arg->argMsgField);
+    (void)sprintf(string, "OutP->%s.", arg->argMsgField);
     VarArray = it->itVarArray;
     count = arg->argCount;
     howbig = it->itSize;
@@ -1827,10 +1752,9 @@ WriteKPD_ool(FILE *file, argument_t *arg)
     if (akCheck(count->argKind, akbVarNeeded))
       fprintf(file, "%s%s", count->argName, subindex);
     else if (akCheck(arg->argKind, akbReplyCopy))
-      /* Fixed an ancient bug here, first %s should be the position of count, not arg */
-      fprintf(file, "%s->%s%s", count->argInSegment, count->argMsgField, subindex);
+      fprintf(file, "In%dP->%s%s", arg->argRequestPos, count->argMsgField, subindex);
     else
-      fprintf(file, "%s->%s%s", count->argOutSegment, count->argMsgField, subindex);
+      fprintf(file, "OutP->%s%s", count->argMsgField, subindex);
 
     if (count->argMultiplier > 1 || howbig > 8)
       fprintf(file, " * %d;\n", count->argMultiplier * howbig / 8);
@@ -1870,7 +1794,7 @@ WriteKPD_oolport(FILE *file, argument_t *arg)
     subindex = "[i]";
   }
   else {
-    (void)sprintf(string, "%s->%s.", arg->argOutSegment, arg->argMsgField);
+    (void)sprintf(string, "OutP->%s.", arg->argMsgField);
     VarArray = it->itVarArray;
     count = arg->argCount;
     subindex = "";
@@ -1886,10 +1810,9 @@ WriteKPD_oolport(FILE *file, argument_t *arg)
     if (akCheck(count->argKind, akbVarNeeded))
       fprintf(file, "%s%s;\n", count->argName, subindex);
     else if (akCheck(arg->argKind, akbReplyCopy))
-      /* Fixed an ancient bug here, first %s should be the position of count, not arg */
-      fprintf(file, "%s->%s%s;\n", count->argInSegment, count->argMsgField, subindex);
+      fprintf(file, "In%dP->%s%s;\n", arg->argRequestPos, count->argMsgField, subindex);
     else
-      fprintf(file, "%s->%s%s;\n", count->argOutSegment, count->argMsgField, subindex);
+      fprintf(file, "OutP->%s%s;\n", count->argMsgField, subindex);
   }
   if (arg->argPoly != argNULL && akCheckAll(arg->argPoly->argKind, akbReturnSnd))
     if (akCheck(arg->argPoly->argKind, akbVarNeeded) || IS_MULTIPLE_KPD(it))
@@ -1925,7 +1848,7 @@ WriteTCheckKPD_port(FILE *file, argument_t *arg)
     close = TRUE;
   }
   else
-    (void)sprintf(string, "%s->%s.", arg->argInSegment, arg->argMsgField);
+    (void)sprintf(string, "In%dP->%s.", arg->argRequestPos, arg->argMsgField);
 
   fprintf(file, "\t%sif (%stype != MACH_MSG_PORT_DESCRIPTOR", tab, string);
   /*
@@ -1983,7 +1906,7 @@ WriteTCheckKPD_ool(FILE *file, argument_t *arg)
   }
   else {
     tab = "";
-    sprintf(string, "%s->%s.", arg->argInSegment, arg->argMsgField);
+    sprintf(string, "In%dP->%s.", arg->argRequestPos, arg->argMsgField);
     howmany = it->itNumber;
     howbig = it->itSize;
     test = !it->itVarArray;
@@ -2024,7 +1947,7 @@ WriteTCheckKPD_oolport(FILE *file, argument_t *arg)
   }
   else {
     tab = "";
-    sprintf(string, "%s->%s.", arg->argInSegment, arg->argMsgField);
+    sprintf(string, "In%dP->%s.", arg->argRequestPos, arg->argMsgField);
     howmany = it->itNumber;
     test = !it->itVarArray;
     howstr = it->itOutNameStr;
@@ -2070,59 +1993,46 @@ WritePackArgValueNormal(FILE *file, argument_t *arg)
        */
       fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
       fprintf(file, "\tif (mig_strncpy_zerofill != NULL) {\n");
-      fprintf(file, "\t\t%s->%s = (%s) mig_strncpy_zerofill(%s->%s, %s, %d);\n",
-        arg->argCount->argOutSegment, arg->argCount->argMsgField, arg->argCount->argType->itTransType,
-        arg->argOutSegment, arg->argMsgField, arg->argVarName, it->itNumber);
+      fprintf(file, "\t\tOutP->%s = (%s) mig_strncpy_zerofill(OutP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argCount->argType->itTransType, arg->argMsgField, arg->argVarName, it->itNumber);
       fprintf(file, "\t} else {\n");
       fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
 
-      fprintf(file, "\t\t%s->%s = (%s) mig_strncpy(%s->%s, %s, %d);\n",
-        arg->argCount->argOutSegment, arg->argCount->argMsgField, arg->argCount->argType->itTransType,
-        arg->argOutSegment, arg->argMsgField, arg->argVarName, it->itNumber);
+      fprintf(file, "\t\tOutP->%s = (%s) mig_strncpy(OutP->%s, %s, %d);\n", arg->argCount->argMsgField, arg->argCount->argType->itTransType, arg->argMsgField, arg->argVarName, it->itNumber);
 
       fprintf(file, "#ifdef USING_MIG_STRNCPY_ZEROFILL\n");
       fprintf(file, "\t}\n");
       fprintf(file, "#endif /* USING_MIG_STRNCPY_ZEROFILL */\n");
 
-      fprintf(file, "\t%s->%sOffset = 0;\n", arg->argOutSegment, arg->argMsgField);
+      fprintf(file, "\tOutP->%sOffset = 0;\n", arg->argMsgField);
     }
     else if (it->itNoOptArray)
-      fprintf(file, "\t(void)memcpy((char *) %s->%s, (const char *) %s, %d);\n",
-        arg->argOutSegment, arg->argMsgField, arg->argVarName, it->itTypeSize);
+      fprintf(file, "\t(void)memcpy((char *) OutP->%s, (const char *) %s, %d);\n", arg->argMsgField, arg->argVarName, it->itTypeSize);
     else {
       argument_t *count = arg->argCount;
       ipc_type_t *btype = it->itElement;
       identifier_t newstr;
-      char tmpstr[MAX_STR_LEN];
 
       /* Note btype->itNumber == count->argMultiplier */
 
-      fprintf(file, "\t(void)memcpy((char *) %s->%s, (const char *) %s, ",
-        arg->argOutSegment, arg->argMsgField, arg->argVarName);
+      fprintf(file, "\t(void)memcpy((char *) OutP->%s, (const char *) %s, ", arg->argMsgField, arg->argVarName);
       if (btype->itTypeSize > 1)
         fprintf(file, "%d * ", btype->itTypeSize);
       /* count is a akbVarNeeded if arg is akbVarNeeded */
-      if (akCheck(count->argKind, akbVarNeeded)) {
+      if (akCheck(count->argKind, akbVarNeeded))
         newstr = count->argVarName;
-      } else {
-        sprintf("%s->%s", count->argOutSegment, count->argMsgField);
-        newstr = tmpstr;
-      }
+      else
+        newstr = (identifier_t)strconcat("OutP->", count->argMsgField);
       fprintf(file, "%s);\n", newstr);
     }
   }
   else if (it->itOutTrans != strNULL)
-    WriteCopyType(file, it, TRUE, "%s->%s",
-      "/* %s %s */ %s(%s)", arg->argOutSegment, arg->argMsgField,
-      it->itOutTrans, arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s", "/* %s */ %s(%s)", arg->argMsgField, it->itOutTrans, arg->argVarName);
   else
-    WriteCopyType(file, it, TRUE, "%s->%s",
-      "/* %s %s */ %s", arg->argOutSegment, arg->argMsgField,
-      arg->argVarName);
+    WriteCopyType(file, it, TRUE, "OutP->%s", "/* %s */ %s", arg->argMsgField, arg->argVarName);
 
   if (arg->argPadName != NULL && it->itPadSize != 0) {
     fprintf(file, "\t    for (int i = 0; i < %d; i++)\n", it->itPadSize);
-    fprintf(file, "\t\t    %s->%s[i] = 0;\n", arg->argOutSegment, arg->argPadName);
+    fprintf(file, "\t\t    OutP->%s[i] = 0;\n", arg->argPadName);
   }
 }
 
@@ -2142,14 +2052,13 @@ WritePackArgValueVariable(FILE *file, argument_t *arg)
      */
     fputs("#ifdef __LP64__\n", file);
     fprintf(file, "\t{\n"
-                  "\t\t" "size_t strLength = strlen(%s->%s) + 1;\n", arg->argOutSegment, arg->argMsgField);
-    fprintf(file,        "\t\t" "if (strLength > 0xffffffff)\n"
-                  "\t\t\t"  "MIG_RETURN_ERROR(%s, MIG_BAD_ARGUMENTS);\n", OutHeadSeg);
-    fprintf(file, "\t\t" "%s->%s = (mach_msg_type_number_t) strLength;\n"
-                  "\t}\n", arg->argCount->argOutSegment, arg->argCount->argMsgField);
+                  "\t\t" "size_t strLength = strlen(OutP->%s) + 1;\n", arg->argMsgField);
+    fputs(        "\t\t" "if (strLength > 0xffffffff)\n"
+                  "\t\t\t"  "MIG_RETURN_ERROR(OutP, MIG_BAD_ARGUMENTS);\n", file);
+    fprintf(file, "\t\t" "OutP->%s = (mach_msg_type_number_t) strLength;\n"
+                  "\t}\n", arg->argCount->argMsgField);
     fputs("#else\n", file);
-    fprintf(file, "\t%s->%s = (mach_msg_type_number_t) strlen(%s->%s) + 1;\n",
-      arg->argCount->argOutSegment, arg->argCount->argMsgField, arg->argOutSegment, arg->argMsgField);
+    fprintf(file, "\tOutP->%s = (mach_msg_type_number_t) strlen(OutP->%s) + 1;\n", arg->argCount->argMsgField, arg->argMsgField);
     fputs("#endif /* __LP64__ */\n", file);
 
   }
@@ -2159,16 +2068,14 @@ static void
 WriteCopyArgValue(FILE *file, argument_t *arg)
 {
   fprintf(file, "\n");
-  char *field =  (arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField;
-  WriteCopyType(file, arg->argType, TRUE, "%s->%s",
-    "/* %s %s */ %s->%s",arg->argOutSegment, field, arg->argInSegment, field);
+  WriteCopyType(file, arg->argType, TRUE, "/* %d */ OutP->%s", "In%dP->%s", arg->argRequestPos, (arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField);
 }
 
 static void
 WriteInitArgValue(FILE *file, argument_t *arg)
 {
   fprintf(file, "\n");
-  fprintf(file, "\t%s->%s = %s;\n\n", arg->argOutSegment, arg->argMsgField, arg->argVarName);
+  fprintf(file, "\tOutP->%s = %s;\n\n", arg->argMsgField, arg->argVarName);
 }
 
 /*
@@ -2194,7 +2101,7 @@ WriteArgSize(FILE *file, argument_t *arg)
     fprintf(file, "%d * ", bsize);
   if (ptype->itString || !akCheck(count->argKind, akbVarNeeded))
     /* get count from descriptor in message */
-    fprintf(file, "%s->%s", count->argOutSegment, count->argMsgField);
+    fprintf(file, "OutP->%s", count->argMsgField);
   else
     /* get count from argument */
     fprintf(file, "%s", count->argVarName);
@@ -2232,7 +2139,7 @@ WriteAdjustMsgSize(FILE *file, argument_t *arg)
     /* We can still address the message header directly.  Fill
        in the size field. */
 
-    fprintf(file, "\t%s->Head.msgh_size = ", OutHeadSeg);
+    fprintf(file, "\tOutP->Head.msgh_size = ");
     rtMinReplySize(file, rt, "Reply");
     fprintf(file, " + msgh_size_delta;\n");
   }
@@ -2247,13 +2154,7 @@ WriteAdjustMsgSize(FILE *file, argument_t *arg)
   else
     fprintf(file, "\tmsgh_size += msgh_size_delta;\n");
 
-  if (!UseMachMsg2) {
-    fprintf(file, "\tOutP = (Reply *) ((pointer_t) OutP + msgh_size_delta - %d);\n",
-      ptype->itTypeSize + ptype->itPadSize);
-  } else {
-    fprintf(file, "\tOutUP = (ReplyU *) ((pointer_t) OutUP + msgh_size_delta - %d);\n",
-      ptype->itTypeSize + ptype->itPadSize);
-  }
+  fprintf(file, "\tOutP = (Reply *) ((pointer_t) OutP + msgh_size_delta - %d);\n", ptype->itTypeSize + ptype->itPadSize);
 }
 
 /*
@@ -2267,7 +2168,7 @@ WriteFinishMsgSize(FILE *file, argument_t *arg)
      argument, we can assign to msgh_size directly. */
 
   if (arg->argReplyPos == 0) {
-    fprintf(file, "\t%s->Head.msgh_size = ", OutHeadSeg);
+    fprintf(file, "\tOutP->Head.msgh_size = ");
     rtMinReplySize(file, arg->argRoutine, "Reply");
     fprintf(file, " + (");
     WriteArgSize(file, arg);
@@ -2443,11 +2344,7 @@ static void WriteStringTerminatorCheck(FILE *file, routine_t *rt)
 
         if (!msg_limit_calculated) {
           msg_limit_calculated = TRUE; // only need to do this once
-          if (!UseMachMsg2) {
-            fprintf(file, "\t\t" "char * msg_limit = ((char *) In0P) + In0P->Head.msgh_size;\n");
-          } else {
-            fprintf(file, "\t\t" "char * msg_limit = (char *) InTrailerP;\n");
-          }
+          fputs("\t\t" "char * msg_limit = ((char *) In0P) + In0P->Head.msgh_size;\n", file);
           if (IsKernelServer) {
             fputs("#if __MigKernelSpecificCode\n", file);
             fputs("\t\t" "size_t strnlen_limit;" "\n", file);
@@ -2467,26 +2364,22 @@ static void WriteStringTerminatorCheck(FILE *file, routine_t *rt)
         // It turns out that the kernel does not have memchr() available, but strnlen() IS available, so we'll just
         // have to emit some conditional code to use the appropriate runtime environment scanning function.
         //
-        if (!variable_length_args_present) {
-          assert(argPtr->argRequestPos == 0);
-        }
         if (IsKernelServer) {
           fputs("#if __MigKernelSpecificCode\n", file);
           fputs("\t\t" "strnlen_limit = min((msg_limit - ", file);
           // If there are variable-length arguments within the message, the proper (adjusted)
           // pointers must be used to access those strings
-          fprintf(file, "%s->%s),  %d);" "\n", argPtr->argInSegment, argPtr->argName, argPtr->argType->itNumber);
+          fprintf(file, "In%dP->%s),  %d);" "\n", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName, argPtr->argType->itNumber);
           fputs("\t\t" "if (", file);
-          fprintf(file, "( strnlen(%s->%s, strnlen_limit) >= %d + 1 )", argPtr->argInSegment, argPtr->argName, argPtr->argType->itNumber);
+          fprintf(file, "( strnlen(In%dP->%s, strnlen_limit) >= %d + 1 )", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName, argPtr->argType->itNumber);
           fputs(")" "\n" "\t\t\t" "return MIG_BAD_ARGUMENTS; // string length exceeds buffer length!" "\n", file);
           fputs("#else\n", file);
         }
         // If there are variable-length arguments within the message, the proper (adjusted)
         // pointers must be used to access those strings
-        fprintf(file, "\t\t" "memchr_limit = min((msg_limit - %s->%s), %d);" "\n",
-          argPtr->argInSegment, argPtr->argName, argPtr->argType->itNumber);
+        fprintf(file, "\t\t" "memchr_limit = min((msg_limit - In%dP->%s),  %d);" "\n", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName, argPtr->argType->itNumber);
         fputs("\t\t" "if (", file);
-        fprintf(file, "( memchr(%s->%s, '\\0', memchr_limit) == NULL )", argPtr->argInSegment, argPtr->argName);
+        fprintf(file, "( memchr(In%dP->%s, '\\0', memchr_limit) == NULL )", (variable_length_args_present ? argPtr->argRequestPos : 0), argPtr->argName);
         fputs(")" "\n" "\t\t\t" "return MIG_BAD_ARGUMENTS; // string length exceeds buffer length!" "\n", file);
         if (IsKernelServer) {
           fputs("#endif /* __MigKernelSpecificCode */" "\n", file);
@@ -2532,7 +2425,7 @@ WriteOOLSizeCheck(FILE *file, routine_t *rt)
           argCountPtr = argPtr->argSubCount;
         } else {
           tab = "";
-          sprintf(string, "%s->%s.", argPtr->argInSegment, argPtr->argMsgField);
+          sprintf(string, "In%dP->%s.", argPtr->argRequestPos, argPtr->argMsgField);
           test = !it->itVarArray;
           argCountPtr = argPtr->argCount;
         }
@@ -2547,10 +2440,10 @@ WriteOOLSizeCheck(FILE *file, routine_t *rt)
           fprintf(file, "\t%s" "if (%ssize ", tab, string);
           if (multiplier > 1)
             fprintf(file, "/ %d ", multiplier);
-          fprintf(file,"!= %s->%s%s", argCountPtr->argInSegment, argCountPtr->argVarName, multiple_kpd ? "[i]" : "");
+          fprintf(file,"!= In%dP->%s%s", argCountPtr->argRequestPos, argCountPtr->argVarName, multiple_kpd ? "[i]" : "");
           if (it->itOOL_Number) {
-            fprintf(file," || %s->%s%s > %d", argCountPtr->argInSegment,
-             argCountPtr->argVarName, multiple_kpd ? "[i]" : "", it->itOOL_Number);
+            fprintf(file," || In%dP->%s%s > %d", argCountPtr->argRequestPos,
+              argCountPtr->argVarName, multiple_kpd ? "[i]" : "", it->itOOL_Number);
           }
 
           fprintf(file,")\n");
@@ -2573,7 +2466,7 @@ WriteOOLSizeCheck(FILE *file, routine_t *rt)
           argCountPtr = argPtr->argSubCount;
         } else {
           tab = "";
-          sprintf(string, "%s->%s.", argPtr->argInSegment, argPtr->argMsgField);
+          sprintf(string, "In%dP->%s.", argPtr->argRequestPos, argPtr->argMsgField);
           test = !it->itVarArray;
           argCountPtr = argPtr->argCount;
         }
@@ -2585,9 +2478,9 @@ WriteOOLSizeCheck(FILE *file, routine_t *rt)
           }
 
           fprintf(file, "\t%s" "if (%scount ", tab, string);
-          fprintf(file,"!= %s->%s%s", argCountPtr->argInSegment, argCountPtr->argVarName, multiple_kpd ? "[i]" : "");
+          fprintf(file,"!= In%dP->%s%s", argCountPtr->argRequestPos, argCountPtr->argVarName, multiple_kpd ? "[i]" : "");
           if (it->itOOL_Number) {
-            fprintf(file," || %s->%s%s > %d", argCountPtr->argInSegment,
+            fprintf(file," || In%dP->%s%s > %d", argCountPtr->argRequestPos,
               argCountPtr->argVarName, multiple_kpd ? "[i]" : "", it->itOOL_Number);
           }
           fprintf(file,")\n");
@@ -2622,38 +2515,19 @@ WriteCheckRequest(FILE *file, routine_t *rt)
   fprintf(file, "#if !defined(__MIG_check__Request__%s_t__defined)\n", rt->rtName);
   fprintf(file, "#define __MIG_check__Request__%s_t__defined\n", rt->rtName);
   if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbRequest)) {
-    __KernelServer_unreachable();
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertIntRepArgDecl, akbSendNdr, "", "");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertCharRepArgDecl, akbSendNdr, "", "");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertFloatRepArgDecl, akbSendNdr, "", "");
   }
   fprintf(file, "\n");
-  if (!UseMachMsg2) {
-    fprintf(file, "mig_internal kern_return_t __MIG_check__Request__%s_t(__attribute__((__unused__)) __Request__%s_t *In0P",
-      rt->rtName, rt->rtName);
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, ", __attribute__((__unused__)) __Request__%s_t **In%dPP", rt->rtName, i);
-  } else {
-    fprintf(file, "mig_internal kern_return_t __MIG_check__Request__%s_t(\n"
-      "\t__attribute__((__unused__)) __RequestKData__%s_t *InKP,\n"
-      "\t__attribute__((__unused__)) __RequestUData__%s_t *In0UP,\n"
-      "\t__attribute__((__unused__)) mach_msg_max_trailer_t *InTrailerP",
-      rt->rtName, rt->rtName, rt->rtName);
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, ",\n\t__attribute__((__unused__)) __RequestUData__%s_t **In%dUPP", rt->rtName, i);
-  }
+  fprintf(file, "mig_internal kern_return_t __MIG_check__Request__%s_t(__attribute__((__unused__)) __Request__%s_t *In0P", rt->rtName, rt->rtName);
+  for (i = 1; i <= rt->rtMaxRequestPos; i++)
+    fprintf(file, ", __attribute__((__unused__)) __Request__%s_t **In%dPP", rt->rtName, i);
   fprintf(file, ")\n{\n");
 
   fprintf(file, "\n\ttypedef __Request__%s_t __Request;\n", rt->rtName);
-  if (!UseMachMsg2) {
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, "\t__Request *In%dP;\n", i);
-  } else {
-    fprintf(file, "\ttypedef __RequestUData__%s_t __RequestU __attribute__((unused));\n", rt->rtName);
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, "\t__RequestU *In%dUP;\n", i);
-  }
-
+  for (i = 1; i <= rt->rtMaxRequestPos; i++)
+    fprintf(file, "\t__Request *In%dP;\n", i);
   if (rt->rtNumRequestVar > 0) {
     fprintf(file, "#if\t__MigTypeCheck\n");
     fprintf(file, "\tunsigned int msgh_size;\n");
@@ -2688,7 +2562,6 @@ WriteCheckRequest(FILE *file, routine_t *rt)
   }
 
   if (CheckNDR && akCheck(rt->rtNdrCode->argKind, akbRequest)) {
-    __KernelServer_unreachable();
     fprintf(file, "#if\t");
     WriteList(file, rt->rtArgs, WriteRequestNDRConvertIntRepArgCond, akbSendNdr, " || \\\n\t", "\n");
     fprintf(file, "\tif (In0P->NDR.int_rep != NDR_record.int_rep) {\n");
@@ -2732,18 +2605,12 @@ WriteCheckRequestCall(FILE *file, routine_t *rt)
 
   fprintf(file, "\n");
   fprintf(file, "#if\tdefined(__MIG_check__Request__%s_t__defined)\n", rt->rtName);
-  if (!UseMachMsg2) {
-    fprintf(file, "\tcheck_result = __MIG_check__Request__%s_t((__Request *)In0P", rt->rtName);
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, ", (__Request **)&In%dP", i);
-  } else {
-    fprintf(file, "\tcheck_result = __MIG_check__Request__%s_t((RequestK *)InKP, (__RequestU *)In0UP, InTrailerP", rt->rtName);
-    for (i = 1; i <= rt->rtMaxRequestPos; i++)
-      fprintf(file, ", (__RequestU **)&In%dUP", i);
-  }
+  fprintf(file, "\tcheck_result = __MIG_check__Request__%s_t((__Request *)In0P", rt->rtName);
+  for (i = 1; i <= rt->rtMaxRequestPos; i++)
+    fprintf(file, ", (__Request **)&In%dP", i);
   fprintf(file, ");\n");
   fprintf(file, "\tif (check_result != MACH_MSG_SUCCESS)\n");
-  fprintf(file, "\t\t{ MIG_RETURN_ERROR(%s, check_result); }\n", OutHeadSeg);
+  fprintf(file, "\t\t{ MIG_RETURN_ERROR(OutP, check_result); }\n");
   fprintf(file, "#endif\t/* defined(__MIG_check__Request__%s_t__defined) */\n", rt->rtName);
   fprintf(file, "\n");
 }
@@ -2770,16 +2637,9 @@ WriteRoutine(FILE *file, routine_t *rt)
   fprintf(file, "/* %s %s */\n", rtRoutineKindToStr(rt->rtKind), rt->rtName);
   fprintf(file, "mig_internal novalue _X%s\n", rt->rtName);
   if (BeAnsiC) {
-    if (!UseMachMsg2) {
-      fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP)\n");
-    } else {
-      fprintf(file, "\t(mach_msg_header_t *InHeadP, __attribute__((__unused__)) void *InDataP,\n"
-        "\t__attribute__((__unused__)) mach_msg_max_trailer_t *InTrailerP,\n"
-        "\tmach_msg_header_t *OutHeadP, __attribute__((__unused__)) void *OutDataP)\n");
-    }
+    fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP)\n");
   }
   else {
-    __KernelServer_unreachable();
     fprintf(file, "#if\t%s\n", NewCDecl);
     fprintf(file, "\t(mach_msg_header_t *InHeadP, mach_msg_header_t *OutHeadP)\n");
     fprintf(file, "#else\n");
@@ -2789,19 +2649,9 @@ WriteRoutine(FILE *file, routine_t *rt)
   }
 
   fprintf(file, "{\n");
-  if (!UseMachMsg2) {
-    WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, "Request",
-      rt->rtSimpleRequest, TRUE, rt->rtServerImpl, FALSE);
-  } else {
-    WriteUDataStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, "RequestU",
-      rt->rtSimpleRequest, TRUE, rt->rtServerImpl, FALSE);
-    fprintf(file, "\ttypedef __RequestKData__%s_t RequestK;\n", rt->rtName);
-    fprintf(file, "\ttypedef __RequestUData__%s_t __RequestU;\n", rt->rtName);
-    fprintf(file, "\ttypedef __ReplyKData__%s_t ReplyK __attribute__((unused));\n", rt->rtName);
-    fprintf(file, "\ttypedef __ReplyUData__%s_t ReplyU __attribute__((unused));\n", rt->rtName);
-  }
-  fprintf(file, "\ttypedef __Reply__%s_t Reply __attribute__((unused));\n", rt->rtName);
-  fprintf(file, "\ttypedef __Request__%s_t __Request __attribute__((unused));\n\n", rt->rtName);
+  WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, "Request", rt->rtSimpleRequest, TRUE, rt->rtServerImpl, FALSE);
+  fprintf(file, "\ttypedef __Request__%s_t __Request;\n", rt->rtName);
+  fprintf(file, "\ttypedef __Reply__%s_t Reply __attribute__((unused));\n\n", rt->rtName);
 
   /*
    * Define a Minimal Reply structure to be used in case of errors
@@ -2890,7 +2740,7 @@ WriteRoutine(FILE *file, routine_t *rt)
     WriteReplyArgs(file, rt);
     WriteReplyInit(file, rt);
     if (!rt->rtSimpleReply)
-      fprintf(file, "\t%s->msgh_body.msgh_descriptor_count = %d;\n", OutHeadSeg, rt->rtReplyKPDs);
+      fprintf(file, "\tOutP->msgh_body.msgh_descriptor_count = %d;\n", rt->rtReplyKPDs);
   }
   if (UseEventLogger)
     WriteLogMsg(file, rt, LOG_SERVER, LOG_REPLY);
