@@ -274,7 +274,19 @@ parseArgs(int argc,char *argv[])
               fatal("missing size for -maxonstack option");
             MaxMessSizeOnStack = atoi(argv[0]);
           }
-          else
+          else if (streql(argv[0], "-mach_msg2"))
+            UseMachMsg2 = TRUE;
+	  else if (streql(argv[0], "-max_descrs")) {
+            --argc; ++argv;
+            if (argc == 0)
+              fatal("missing count for -max_descrs option");
+            MaxServerDescrs = atoi(argv[0]);
+	  } else if (streql(argv[0], "-max_reply_descrs")) {
+            --argc; ++argv;
+            if (argc == 0)
+              fatal("missing count for -max_reply_descrs option");
+            MaxServerReplyDescrs = atoi(argv[0]);
+	  } else
             fatal("unknown flag: '%s'", argv[0]);
           break;
 
@@ -293,6 +305,12 @@ parseArgs(int argc,char *argv[])
     }
     else
       fatal("bad argument: '%s'", *argv);
+
+  if (UseMachMsg2) {
+    if (!BeAnsiC || UseRPCTrap || CheckNDR) {
+      fatal("KernelServer does not support the given uptions.");
+    }
+  }
 }
 
 FILE *uheader, *server, *user;

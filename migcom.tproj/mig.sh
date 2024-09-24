@@ -118,6 +118,9 @@ do
 	-maxonstack ) migflags=( "${migflags[@]}" "$1" "$2"); shift; shift;;
 	-split ) migflags=( "${migflags[@]}" "$1" ); shift;;
 	-novouchers ) migflags=( "${migflags[@]}" "$1" ); shift;;
+	-mach_msg2 ) migflags=( "${migflags[@]}" "$1" ); shift;;
+	-max_descrs) migflags=( "${migflags[@]}" "$1" "$2"); shift; shift;;
+	-max_reply_descrs) migflags=( "${migflags[@]}" "$1" "$2"); shift; shift;;
 	-MD ) sawMD=1; cppflags=( "${cppflags[@]}" "$1"); shift;;
 	-cpp) shift; shift;;
 	-cc) C="$2"; shift; shift;;
@@ -145,6 +148,9 @@ do
 	-maxonstack ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-split ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
 	-novouchers ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
+	-mach_msg2 ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
+	-max_descrs ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
+	-max_reply_descrs ) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-MD ) echo "warning: option \"$1\" after filename(s) ignored"; shift; continue;;
 	-cpp) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
 	-cc) echo "warning: option \"$1 $2\" after filename(s) ignored"; shift; shift; continue;;
@@ -168,7 +174,14 @@ do
     fi
     rm -f "${temp}.c" "${temp}.d"
     (echo '#line 1 '\"${file}\" ; cat "${file}" ) > "${temp}.c"
-    "$C" -E -arch ${arch} "${target[@]}" "${cppflags[@]}" -I "${sourcedir}" "${iSysRootParm[@]}" "${temp}.c" | "$M" "${migflags[@]}"
+    if [ -n "$MIG_TRACE_HEADERS" ]
+    then
+      env CC_PRINT_HEADERS_FORMAT=json CC_PRINT_HEADERS_FILTERING=only-direct-system CC_PRINT_HEADERS_FILE="$MIG_TRACE_HEADERS" \
+        "$C" -E -arch ${arch} "${target[@]}" "${cppflags[@]}" -I "${sourcedir}" "${iSysRootParm[@]}" "${temp}.c" | "$M" "${migflags[@]}"
+    else
+      env -u CC_PRINT_HEADERS_FORMAT \
+        "$C" -E -arch ${arch} "${target[@]}" "${cppflags[@]}" -I "${sourcedir}" "${iSysRootParm[@]}" "${temp}.c" | "$M" "${migflags[@]}"
+    fi
     if [ $? -ne 0 ]
     then
       rm -rf "${temp}.c" "${temp}.d" "${WORKTMP}"
@@ -209,6 +222,10 @@ do
 		< "${temp}.d" > "${target}.d"
 	done
 	rm -f "${temp}.d"
+    fi
+    if [ -n "$MIG_TRACE_HEADERS" ]
+    then
+    sed -e 's;"'"${temp}"'.c";"'"$file"'";' -i "" "$MIG_TRACE_HEADERS"
     fi
     rm -f "${temp}.c"
 done
